@@ -1,6 +1,6 @@
 # Droid Terminal
 
-Droid Terminal is a mobile-first Android SSH client and terminal emulator under development by PrajnaBytes International Private Limited. It is designed for administrators, developers, DevOps engineers and network engineers who need practical terminal control on a phone or tablet.
+**Droid Terminal** is a mobile-first Android SSH client and terminal emulator under development by PrajnaBytes International Private Limited. It is designed for administrators, developers, DevOps engineers and network engineers who need practical terminal control on a phone or tablet.
 
 **Licence:** GPL-3.0-or-later. See [LICENSE](LICENSE), [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
 
