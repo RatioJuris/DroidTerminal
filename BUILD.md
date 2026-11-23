@@ -16,8 +16,8 @@ It performs:
 
 1. Checkout.
 2. Temurin JDK 17.
-3. Android SDK via `android-actions/setup-android@v3`.
-4. Pinned `platforms;android-37.2`, `build-tools;36.0.0` and `platform-tools`.
+3. Android SDK via `android-actions/setup-android@v3`, with its retired default `tools` package disabled via `packages: ''`.
+4. Pinned `platforms;android-37.2`, `build-tools;36.0.0` and `platform-tools` installed explicitly.
 5. Gradle wrapper 9.9.2 via `gradle/actions/setup-gradle@v4`, with dependency caching enabled.
 6. Dependency-resolution validation for `debugRuntimeClasspath`.
 7. `testDebugUnitTest`, `lint` and `assembleDebug`.
