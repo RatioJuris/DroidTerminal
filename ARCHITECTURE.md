@@ -9,7 +9,7 @@ Droid Terminal is an Android application built with Kotlin, Jetpack Compose, And
 ```
 app
  ├── core                 shared product metadata
- ├── terminal-engine      terminal model and future VT emulator/renderer
+ ├── terminal-engine      screen buffer, character model and VT byte handling
  ├── keypad               key model, byte sequences, modifier state, layouts
  ├── ssh-engine           SSH-2 transport, auth, host-key policy
  ├── vault                Android Keystore + AES-256-GCM credential storage
@@ -23,7 +23,7 @@ app
 
 ### Dependency rules
 
-- `terminal-engine` does not depend on `ssh-engine`; bytes flow into it through an interface.
+- `terminal-engine` is pure Kotlin: it does not depend on `ssh-engine`, Android UI or Compose. Bytes flow into it through `TerminalEmulator`, and immutable `TerminalSnapshot` values flow out to future renderers.
 - `ssh-engine` does not depend on Compose or `app`; it exposes Kotlin flows for connection state and channel I/O.
 - `vault` and `security` own all secret-handling code. Other modules receive opaque identifiers, never raw key material.
 - `app` is the only module that assembles navigation and screens.
@@ -68,6 +68,10 @@ The keypad module already defines the domain layer:
 
 UI, persistence of custom layouts and long-press behaviour are later phases.
 
+## Terminal engine foundation
+
+Phase 2 batch 1 adds a Unicode-aware cell model, a fixed visible screen buffer, bounded scrollback with resize normalisation, deferred right-margin wrapping, C0 control handling, incremental UTF-8 decoding and immutable snapshots for future renderers. Unsupported escape sequences are consumed safely but have no effect yet. ANSI styling, cursor-control sequences, keypad contracts, selection and the Compose terminal view are deliberately deferred to later batches.
+
 ## Status
 
-Only the foundation and the keypad/security domain primitives exist. Terminal rendering, SSH, vault encryption, SFTP and session management are planned, not implemented.
+The Phase 1 foundation, keypad/security primitives and Phase 2 batch 1 buffer/scrollback state exist. ANSI support, the shortcut keypad UI, SSH, vault encryption, SFTP and session management are planned, not implemented.

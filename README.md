@@ -12,7 +12,7 @@ The Droid Terminal icon is the original artwork supplied by the project owner. T
 
 ## Current status
 
-> **Phase 1 — Foundation.** The repository now contains the Android project skeleton, module boundaries, GPL licensing, GitHub Actions CI, documentation and unit tests for the foundation domain objects. Terminal emulation, SSH, the secure vault, SFTP and session management are **not implemented yet**. The application shell says so explicitly rather than presenting mock functionality as finished.
+> **Phase 2 — Buffer and state.** The repository contains the verified Phase 1 foundation plus a pure-Kotlin terminal screen buffer with bounded scrollback, Unicode-aware character handling, C0 control processing and incremental UTF-8 decoding. ANSI escape sequences, the Compose terminal view, SSH, the secure vault, SFTP and session management are **not implemented yet**. The application shell says so explicitly rather than presenting mock functionality as finished.
 
 Repository audit at the start of Phase 1: the GitHub repository contained only a one-line `README.md`, with no source, build files, licence or CI. There was no existing implementation to preserve.
 
@@ -38,7 +38,7 @@ Droid Terminal will solve this with a compact, configurable shortcut keypad that
 | --- | --- |
 | `app` | Android application shell and Material 3 navigation |
 | `core` | Shared product metadata |
-| `terminal-engine` | Terminal model and future VT emulator/renderer |
+| `terminal-engine` | Screen buffer, character model and VT byte handling |
 | `keypad` | Shortcut key model, sequences, modifier state and layouts |
 | `ssh-engine` | SSH transport and authentication |
 | `vault` | Encrypted credential and key storage |
