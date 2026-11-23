@@ -10,14 +10,15 @@ package com.ratiojuris.droidterminal.terminalengine
 /**
  * One visible terminal cell.
  *
- * A cell holds a base code point and any combining marks attached to it. Wide
- * characters occupy the cell they start in plus a continuation cell that is
- * skipped by renderers. Styling attributes are added by the ANSI milestone.
+ * A cell holds a base code point, any combining marks attached to it and the
+ * SGR attributes active when it was written. Wide characters occupy the cell
+ * they start in plus a continuation cell that renderers skip.
  */
 data class TerminalCell(
     val codePoints: List<Int>,
     val width: Int,
     val isWideContinuation: Boolean = false,
+    val attributes: TerminalAttributes = TerminalAttributes.DEFAULT,
 ) {
     init {
         require(codePoints.isNotEmpty()) { "a cell needs at least one code point" }
@@ -47,11 +48,16 @@ data class TerminalCell(
 
         val BLANK: TerminalCell = TerminalCell(listOf(SPACE_CODE), 1)
 
-        fun of(codePoint: Int, width: Int): TerminalCell {
+        fun of(
+            codePoint: Int,
+            width: Int,
+            attributes: TerminalAttributes = TerminalAttributes.DEFAULT,
+        ): TerminalCell {
             require(width in 1..2) { "printed cell width must be 1 or 2" }
-            return TerminalCell(listOf(codePoint), width)
+            return TerminalCell(listOf(codePoint), width, attributes = attributes)
         }
 
-        fun wideContinuation(): TerminalCell = TerminalCell(listOf(SPACE_CODE), 0, true)
+        fun wideContinuation(attributes: TerminalAttributes = TerminalAttributes.DEFAULT): TerminalCell =
+            TerminalCell(listOf(SPACE_CODE), 0, true, attributes)
     }
 }

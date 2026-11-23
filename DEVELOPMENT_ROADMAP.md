@@ -16,7 +16,7 @@ Status is based on merged code and passing GitHub Actions checks, not on design 
 ## Phase 2 batches
 
 1. **Buffer and state** — character model, screen buffer, cursor/screen state, bounded scrollback. Implemented and pushed for CI verification.
-2. **Parser and input** — ANSI/VT escape sequences, control characters, terminal input processing, shortcut-keypad contracts and a testable local I/O adapter. No SSH.
+2. **Parser and input** — ANSI/VT escape sequences, control characters, terminal input processing, shortcut-keypad contracts and a testable local I/O adapter. Implemented and pushed for CI verification. No SSH.
 3. **Engine verification** — targeted suite for parser sequences, buffer mutations and modifier/key-byte mappings.
 4. **Compose and device validation** — render real terminal state in Compose, check keyboard/rotation/performance on a physical device, and keep GitHub Actions green.
 

@@ -70,8 +70,8 @@ UI, persistence of custom layouts and long-press behaviour are later phases.
 
 ## Terminal engine foundation
 
-Phase 2 batch 1 adds a Unicode-aware cell model, a fixed visible screen buffer, bounded scrollback with resize normalisation, deferred right-margin wrapping, C0 control handling, incremental UTF-8 decoding and immutable snapshots for future renderers. Unsupported escape sequences are consumed safely but have no effect yet. ANSI styling, cursor-control sequences, keypad contracts, selection and the Compose terminal view are deliberately deferred to later batches.
+Phase 2 batch 1 adds a Unicode-aware cell model, fixed visible screen buffer, bounded scrollback with resize normalisation, deferred wrapping, C0 controls and immutable snapshots. Batch 2 adds an incremental VT parser emitting typed actions, CSI cursor/erase/reset/scroll-region operations, full SGR including 256-colour and truecolor, OSC title handling, SS3/charset/string-state handling, and keypad byte verification through the local `feed(ByteArray)` adapter. All state access is synchronised. Text selection and the Compose terminal view are later batches.
 
 ## Status
 
-The Phase 1 foundation, keypad/security primitives and Phase 2 batch 1 buffer/scrollback state exist. ANSI support, the shortcut keypad UI, SSH, vault encryption, SFTP and session management are planned, not implemented.
+The Phase 1 foundation, keypad/security primitives and Phase 2 buffer/scrollback plus parser/input batches exist. The Compose terminal view, SSH, vault encryption, SFTP and session management are planned, not implemented.

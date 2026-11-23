@@ -13,50 +13,59 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
 /**
- * Streams terminal bytes into a [TerminalScreen].
+ * Applies host output bytes to a [TerminalScreen].
  *
  * UTF-8 decoding is incremental, so multi-byte characters split across reads
- * are preserved. C0 controls are applied directly. Escape sequences are
- * consumed safely but deliberately ignored; their actions arrive with the
- * ANSI support milestone.
+ * are preserved. Bytes are parsed by [VtParser] into typed actions; printable
+ * text, C0 controls, CSI, OSC and ESC sequences mutate real screen state.
+ * `feed(ByteArray)` is the local I/O adapter; no transport is involved.
  */
 class TerminalEmulator(
     initialSize: TerminalSize = TerminalSize.DEFAULT,
     scrollbackLimit: Int = 1_000,
 ) {
-    private enum class ParseState {
-        GROUND,
-        ESCAPE,
-        CSI,
-        OSC,
-        DCS,
-        CHARSET,
-    }
-
     private val screen = TerminalScreen(initialSize, scrollbackLimit)
+    private val parser = VtParser()
     private val decoder = StandardCharsets.UTF_8.newDecoder()
         .onMalformedInput(CodingErrorAction.REPLACE)
         .onUnmappableCharacter(CodingErrorAction.REPLACE)
 
     private var pendingBytes = ByteArray(0)
-    private var parseState = ParseState.GROUND
-    private var awaitingStringTerminator = false
 
     val size: TerminalSize
-        get() = screen.size
+        @Synchronized get() = screen.size
 
     val cursor: Cursor
-        get() = screen.cursor
+        @Synchronized get() = screen.cursor
 
+    val title: String
+        @Synchronized get() = screen.title
+
+    val cursorVisible: Boolean
+        @Synchronized get() = screen.cursorVisible
+
+    val autoWrap: Boolean
+        @Synchronized get() = screen.autoWrap
+
+    @Synchronized
     fun feed(bytes: ByteArray) {
         if (bytes.isEmpty() && pendingBytes.isEmpty()) return
-        decode(bytes).codePoints().forEach { consume(it) }
+        decode(bytes).codePoints().forEach { codePoint ->
+            parser.consume(codePoint)?.let(::applyAction)
+        }
     }
 
-    fun feed(text: String) = feed(text.toByteArray(StandardCharsets.UTF_8))
+    @Synchronized
+    fun feed(text: String) {
+        feed(text.toByteArray(StandardCharsets.UTF_8))
+    }
 
-    fun resize(newSize: TerminalSize) = screen.resize(newSize)
+    @Synchronized
+    fun resize(newSize: TerminalSize) {
+        screen.resize(newSize)
+    }
 
+    @Synchronized
     fun snapshot(): TerminalSnapshot = screen.snapshot()
 
     private fun decode(bytes: ByteArray): String {
@@ -84,50 +93,95 @@ class TerminalEmulator(
         }
     }
 
-    private fun consume(codePoint: Int) {
-        when (parseState) {
-            ParseState.GROUND -> consumeGround(codePoint)
-            ParseState.ESCAPE -> consumeEscape(codePoint)
-            ParseState.CSI -> if (codePoint in 0x40..0x7E) parseState = ParseState.GROUND
-            ParseState.CHARSET -> parseState = ParseState.GROUND
-            ParseState.OSC, ParseState.DCS -> consumeString(codePoint)
+    private fun applyAction(action: VtAction) {
+        when (action) {
+            is VtAction.Print -> screen.writeCodePoint(action.codePoint)
+            is VtAction.Execute -> execute(action.control)
+            is VtAction.Csi -> applyCsi(action)
+            is VtAction.Osc -> if (action.command == 0 || action.command == 2) {
+                screen.setTitle(action.data)
+            }
+            is VtAction.Escape -> applyEscape(action.final)
+            // SS3 finals are input-side key reports (F1-F4); consuming them is
+            // the required behaviour, never printing the final byte.
+            is VtAction.Ss3 -> Unit
         }
     }
 
-    private fun consumeGround(codePoint: Int) {
-        when (codePoint) {
-            0x00, 0x07 -> Unit // NUL and BEL have no visible effect in this milestone.
+    private fun execute(control: Int) {
+        when (control) {
+            0x00, 0x07, 0x0E, 0x0F -> Unit
             0x08 -> screen.backspace()
             0x09 -> screen.tab()
             0x0A, 0x0B, 0x0C -> screen.lineFeed()
             0x0D -> screen.carriageReturn()
-            0x1B -> parseState = ParseState.ESCAPE
-            else -> {
-                if (!Character.isISOControl(codePoint)) screen.writeCodePoint(codePoint)
+            0x18, 0x1A -> parser.reset()
+            else -> Unit
+        }
+    }
+
+    private fun applyCsi(action: VtAction.Csi) {
+        val parameters = action.parameters
+        if (action.privatePrefix == '?') {
+            if (action.final == 'h' || action.final == 'l') {
+                applyPrivateMode(parameters, action.final == 'h')
+            }
+            return
+        }
+        if (action.intermediate != null) return
+
+        when (action.final) {
+            'A' -> screen.cursorUp(count(parameters, 0))
+            'B' -> screen.cursorDown(count(parameters, 0))
+            'C' -> screen.cursorForward(count(parameters, 0))
+            'D' -> screen.cursorBackward(count(parameters, 0))
+            'E' -> screen.cursorNextLine(count(parameters, 0))
+            'F' -> screen.cursorPreviousLine(count(parameters, 0))
+            'G' -> screen.cursorHorizontalAbsolute(count(parameters, 0))
+            'H', 'f' -> screen.cursorPosition(count(parameters, 0), count(parameters, 1))
+            'J' -> screen.eraseInDisplay(value(parameters, 0, 0))
+            'K' -> screen.eraseInLine(value(parameters, 0, 0))
+            'X' -> screen.eraseCharacter(count(parameters, 0))
+            'Z' -> screen.cursorBackward(TAB_WIDTH)
+            'd' -> screen.cursorVerticalAbsolute(count(parameters, 0))
+            'm' -> screen.applySgr(parameters)
+            'r' -> screen.setScrollRegion(count(parameters, 0), count(parameters, 1))
+            's' -> screen.saveCursor()
+            'u' -> screen.restoreCursor()
+            else -> Unit
+        }
+    }
+
+    private fun applyPrivateMode(parameters: List<Int>, enabled: Boolean) {
+        parameters.forEach { mode ->
+            when (mode) {
+                7 -> screen.setAutoWrap(enabled)
+                25 -> screen.setCursorVisible(enabled)
+                else -> Unit
             }
         }
     }
 
-    private fun consumeEscape(codePoint: Int) {
-        parseState = when (codePoint) {
-            '['.code -> ParseState.CSI
-            ']'.code -> ParseState.OSC
-            'P'.code -> ParseState.DCS
-            '('.code, ')'.code, '*'.code, '+'.code -> ParseState.CHARSET
-            else -> ParseState.GROUND
+    private fun applyEscape(final: Char) {
+        when (final) {
+            'c' -> screen.reset()
+            '7' -> screen.saveCursor()
+            '8' -> screen.restoreCursor()
+            'D' -> screen.index()
+            'E' -> screen.nextLine()
+            'M' -> screen.reverseIndex()
+            else -> Unit
         }
     }
 
-    private fun consumeString(codePoint: Int) {
-        if (awaitingStringTerminator) {
-            awaitingStringTerminator = false
-            if (codePoint == '\\'.code) parseState = ParseState.GROUND
-            return
-        }
+    private fun count(parameters: List<Int>, index: Int): Int = value(parameters, index, 1)
 
-        when (codePoint) {
-            0x1B -> awaitingStringTerminator = true
-            0x07 -> if (parseState == ParseState.OSC) parseState = ParseState.GROUND
-        }
+    private fun value(parameters: List<Int>, index: Int, default: Int): Int {
+        val parameter = parameters.getOrNull(index) ?: return default
+        return if (parameter < 0) default else parameter
+    }
+
+    private companion object {
+        const val TAB_WIDTH = 8
     }
 }

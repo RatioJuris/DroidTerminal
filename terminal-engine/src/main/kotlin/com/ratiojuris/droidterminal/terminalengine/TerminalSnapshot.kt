@@ -14,6 +14,9 @@ data class TerminalSnapshot(
     val scrollback: List<List<TerminalCell>>,
     val cursor: Cursor,
     val wrapPending: Boolean,
+    val title: String = "",
+    val cursorVisible: Boolean = true,
+    val autoWrap: Boolean = true,
 ) {
     init {
         require(rows.size == size.rows) { "snapshot row count must match terminal size" }

@@ -31,4 +31,5 @@ android {
 
 dependencies {
     testImplementation(libs.junit)
+    testImplementation(project(":keypad"))
 }

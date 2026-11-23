@@ -7,7 +7,9 @@ All notable changes to Droid Terminal are recorded here. The format follows Keep
 ### Added
 
 - Phase 2 batch 1 terminal foundation: Unicode-aware cell model, visible screen buffer, bounded scrollback, deferred wrapping, C0 control handling, incremental UTF-8 decoding and immutable snapshots.
-- Targeted terminal-engine tests for character widths, buffer mutations, scrolling, resizing, control bytes, malformed UTF-8 and unsupported escape sequences.
+- Targeted terminal-engine tests for character widths, buffer mutations, scrolling, resizing and control bytes.
+- Phase 2 batch 2 parser/input: incremental VT parser with typed actions, CSI/ESC/OSC/SS3 handling, SGR colours and styles, cursor movement, erase operations, scroll regions, reset, save/restore cursor and keypad byte verification.
+- Targeted parser, SGR, OSC, cursor, erase and key-mapping tests.
 
 ## [0.1.0] — 2026-11-23
 
