@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Droid Terminal — a secure Android SSH client and terminal emulator.
+  ~ Copyright (C) 2026 PrajnaBytes International Private Limited
+  ~
+  ~ SPDX-License-Identifier: GPL-3.0-or-later
+  -->
+<resources>
+    <string name="app_name">Droid Terminal</string>
+</resources>

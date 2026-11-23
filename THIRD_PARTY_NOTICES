@@ -1,0 +1,36 @@
+# Third-party notices
+
+Droid Terminal is licensed under `GPL-3.0-or-later`. Every dependency is reviewed for licence compatibility, attribution duties and source-disclosure obligations before it is added. This file records the current review state.
+
+## Integrated in Phase 1
+
+| Component | Version | Licence | Notes |
+| --- | --- | --- | --- |
+| Android Gradle Plugin | 9.5.2 | Apache-2.0 | Build tooling only; not shipped inside the APK. |
+| Gradle | 9.9.2 (wrapper) | Apache-2.0 | Build tooling only. |
+| Kotlin | 2.4.21 | Apache-2.0 | Kotlin standard library and compiler plugins. |
+| AndroidX Activity (Compose) | 1.13.0 | Apache-2.0 | Activity and edge-to-edge integration. |
+| AndroidX Lifecycle | 2.11.1 | Apache-2.0 | Lifecycle-aware Compose integration. |
+| AndroidX Core KTX | 1.19.1 | Apache-2.0 | Android platform extensions. |
+| Jetpack Compose (BOM 2026.11.01) | BOM-managed | Apache-2.0 | UI toolkit, Material 3 and icons. |
+| JUnit | 4.13.2 | EPL-1.0 | Test-only dependency. |
+
+## Planned dependencies — not yet integrated
+
+| Candidate | Intended use | Licence | Review status |
+| --- | --- | --- | --- |
+| Apache MINA SSHD | SSH-2 transport, authentication and SFTP | Apache-2.0 | Compatible in principle; Android support and dependency tree require validation before integration. |
+| Termux `terminal-emulator` / `terminal-view` | VT emulator and Android rendering | Apache-2.0 | Compatible in principle; attribution and any local modifications must be recorded here. |
+| Bouncy Castle | Key format parsing where platform APIs are insufficient | Bouncy Castle Licence (MIT-style) | Compatibility assessment required before integration. |
+
+## Code not used
+
+PuTTY code, trademarks, logos and branding are not included. If PuTTY-derived code is ever considered, each component and its copyright ownership must be reviewed individually; the overall MIT-style licence must not be assumed to permit wholesale relicensing.
+
+## Recording a new dependency
+
+1. Identify the exact licence and copyright holder.
+2. Confirm GPL-3.0-or-later compatibility.
+3. Record any attribution or source-offer requirement here and in the application UI where required.
+4. Note any local modifications to third-party source.
+5. Update dependency hashes through Gradle dependency verification.
