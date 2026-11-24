@@ -100,12 +100,11 @@ object KeySequences {
      * content cannot inject escape sequences into the remote terminal.
      */
     fun paste(text: String, bracketed: Boolean): String {
-        val safe = text.map { char ->
-            when (char) {
-                ESC, '\u0000' -> null
-                else -> char
+        val safe = buildString {
+            text.forEach { char ->
+                if (char != ESC && char != '\u0000') append(char)
             }
-        }.joinToString("")
+        }
         return if (bracketed) "$PASTE_START$safe$PASTE_END" else safe
     }
 
