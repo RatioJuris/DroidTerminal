@@ -127,7 +127,7 @@ object KeySequences {
 
     private fun letterKey(final: Char, parameter: Int, modified: Boolean, modes: TerminalModes): String = when {
         modified -> "${ESC}[1;$parameter$final"
-        modes.applicationCursorKeys -> "$ESC$O$final"
+        modes.applicationCursorKeys -> "${ESC}O$final"
         else -> "$ESC[$final"
     }
 
@@ -143,7 +143,7 @@ object KeySequences {
             in 1..4 -> "PQRS"[number - 1]
             else -> throw IllegalArgumentException("unsupported function key F$number")
         }
-        return if (modified) "${ESC}[1;$parameter$final" else "$ESC$O$final"
+        return if (modified) "${ESC}[1;$parameter$final" else "${ESC}O$final"
     }
 
     private fun characterSequence(char: Char, modifiers: ModifierState): String {
