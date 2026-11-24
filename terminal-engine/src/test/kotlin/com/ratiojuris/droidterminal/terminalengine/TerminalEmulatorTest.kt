@@ -193,9 +193,9 @@ class TerminalEmulatorTest {
         emulator.feed("\u001B8")
         assertEquals(Cursor(0, 0), emulator.cursor)
 
-        emulator.feed("\u001Bs\u001B[2;2H")
+        emulator.feed("\u001B[s\u001B[2;2H")
         assertEquals(Cursor(1, 1), emulator.cursor)
-        emulator.feed("\u001Bu")
+        emulator.feed("\u001B[u")
         assertEquals(Cursor(0, 0), emulator.cursor)
     }
 
