@@ -202,6 +202,7 @@ fun InAppKeyboard(
     modifiers: ModifierState,
     capsLock: Boolean,
     pad: KeyboardPad,
+    selectionActive: Boolean,
     showFunctionRow: Boolean,
     haptics: Boolean,
     onKey: (TerminalKey) -> Unit,
@@ -238,7 +239,7 @@ fun InAppKeyboard(
                 onClick = onTogglePad,
                 label = { Text("Select", style = MaterialTheme.typography.labelMedium) },
             )
-            if (pad == KeyboardPad.SELECT) {
+            if (pad == KeyboardPad.SELECT || selectionActive) {
                 Surface(
                     color = MaterialTheme.colorScheme.tertiaryContainer,
                     shape = RoundedCornerShape(4.dp),
@@ -267,7 +268,7 @@ fun InAppKeyboard(
             WeightedKeyRow(bottomLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
             ScrollableKeyRow(controlRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
         } else {
-            SelectPad(onSelectionAction)
+            SelectPad(selectionActive, onSelectionAction)
         }
     }
 }
@@ -479,8 +480,7 @@ private fun activateKey(
 }
 
 @Composable
-private fun SelectPad(onAction: (SelectionAction) -> Unit) {
-    // TODO(phase2): bind pad actions to terminal-buffer selection mode and the Android clipboard.
+private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -496,7 +496,7 @@ private fun SelectPad(onAction: (SelectionAction) -> Unit) {
                 ArrowDirection.RIGHT to SelectionAction.MOVE_RIGHT,
             ).forEach { (direction, action) ->
                 Box(modifier = Modifier.weight(1f)) {
-                    PadButton(direction.label) { onAction(action) }
+                    PadButton(direction.label, selectionActive) { onAction(action) }
                 }
             }
         }
@@ -504,44 +504,52 @@ private fun SelectPad(onAction: (SelectionAction) -> Unit) {
             listOf("Select", "Select All", "Clear") to listOf(
                 SelectionAction.SELECT, SelectionAction.SELECT_ALL, SelectionAction.CLEAR,
             ),
+            selectionActive,
             onAction,
         )
         PadRow(
             listOf("Select Word", "Select Line") to listOf(
                 SelectionAction.SELECT_WORD, SelectionAction.SELECT_LINE,
             ),
+            selectionActive,
             onAction,
         )
         PadRow(
             listOf("Copy", "Paste") to listOf(
                 SelectionAction.COPY, SelectionAction.PASTE,
             ),
+            selectionActive,
             onAction,
         )
     }
 }
 
 @Composable
-private fun PadRow(labelsAndActions: Pair<List<String>, List<SelectionAction>>, onAction: (SelectionAction) -> Unit) {
+private fun PadRow(
+    labelsAndActions: Pair<List<String>, List<SelectionAction>>,
+    selectionActive: Boolean,
+    onAction: (SelectionAction) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         labelsAndActions.first.forEachIndexed { index, label ->
             Box(modifier = Modifier.weight(1f)) {
-                PadButton(label) { onAction(labelsAndActions.second[index]) }
+                PadButton(label, selectionActive) { onAction(labelsAndActions.second[index]) }
             }
         }
     }
 }
 
 @Composable
-private fun PadButton(label: String, onClick: () -> Unit) {
+private fun PadButton(label: String, highlighted: Boolean = false, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
+            .then(if (highlighted) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
             .semantics(mergeDescendants = true) { contentDescription = label },
     ) {
         Text(

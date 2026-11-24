@@ -11,8 +11,8 @@ package com.ratiojuris.droidterminal.terminalengine
  * Mutable visible screen buffer for a VT-compatible terminal.
  *
  * Owns the visible grid, bounded scrollback, character placement, SGR state,
- * cursor/erase operations and scroll-region behaviour. Text selection and the
- * Compose renderer belong to later batches.
+ * cursor/erase operations, scroll-region behaviour and text selection. The
+ * Compose renderer lives in the app module.
  */
 class TerminalScreen(
     initialSize: TerminalSize = TerminalSize.DEFAULT,
@@ -39,6 +39,9 @@ class TerminalScreen(
         private set
 
     var autoWrap: Boolean = true
+        private set
+
+    var selection: TerminalSelection? = null
         private set
 
     var topMargin: Int = 0
@@ -255,6 +258,7 @@ class TerminalScreen(
         topMargin = 0
         bottomMargin = size.rows - 1
         savedCursor = null
+        selection = null
     }
 
     fun setTitle(value: String) {
@@ -268,6 +272,87 @@ class TerminalScreen(
     fun setAutoWrap(value: Boolean) {
         autoWrap = value
         if (!value) wrapPending = false
+    }
+
+    /** Absolute line count: scrollback plus the visible screen. */
+    fun lineCount(): Int = history.size + rows.size
+
+    fun beginSelection(row: Int, column: Int) {
+        val clampedRow = row.coerceIn(0, lineCount() - 1)
+        val clampedColumn = column.coerceIn(0, size.columns - 1)
+        selection = TerminalSelection(clampedRow, clampedColumn, clampedRow, clampedColumn)
+    }
+
+    fun moveSelectionHead(row: Int, column: Int) {
+        val current = selection ?: return
+        val clampedRow = row.coerceIn(0, lineCount() - 1)
+        val clampedColumn = column.coerceIn(0, size.columns - 1)
+        selection = current.copy(headRow = clampedRow, headColumn = clampedColumn)
+    }
+
+    fun extendSelection(deltaRow: Int, deltaColumn: Int) {
+        val current = selection ?: return
+        moveSelectionHead(current.headRow + deltaRow, current.headColumn + deltaColumn)
+    }
+
+    fun selectAll() {
+        if (lineCount() == 0) return
+        selection = TerminalSelection(0, 0, lineCount() - 1, size.columns - 1)
+    }
+
+    fun selectLine() {
+        val row = selection?.headRow ?: cursor.row
+        selection = TerminalSelection(row, 0, row, size.columns - 1)
+    }
+
+    /** Selects the word under the selection head, or the single cell if it is blank. */
+    fun selectWord() {
+        val current = selection ?: return
+        val row = current.headRow.coerceIn(0, lineCount() - 1)
+        val line = lineAt(row) ?: return
+        if (!isWordCell(line.getOrNull(current.headColumn))) {
+            selection = TerminalSelection(row, current.headColumn, row, current.headColumn)
+            return
+        }
+        var start = current.headColumn
+        var end = current.headColumn
+        while (start > 0 && isWordCell(line.getOrNull(start - 1))) start--
+        while (end < size.columns - 1 && isWordCell(line.getOrNull(end + 1))) end++
+        selection = TerminalSelection(row, start, row, end)
+    }
+
+    fun clearSelection() {
+        selection = null
+    }
+
+    /** Selected text with newlines between rows, or an empty string when nothing is selected. */
+    fun selectedText(): String {
+        val current = selection ?: return ""
+        val parts = mutableListOf<String>()
+        for (row in current.startRow..current.endRow) {
+            val line = lineAt(row) ?: continue
+            val from = if (row == current.startRow) current.startColumn else 0
+            val until = if (row == current.endRow) {
+                current.endColumn.coerceAtMost(size.columns - 1)
+            } else {
+                size.columns - 1
+            }
+            parts += line.drop(from).take(until - from + 1)
+                .joinToString("") { it.text }
+                .trimEnd(' ')
+        }
+        return parts.dropLastWhile { it.isEmpty() }.joinToString("\n")
+    }
+
+    private fun lineAt(absoluteRow: Int): List<TerminalCell>? = when {
+        absoluteRow < 0 -> null
+        absoluteRow < history.size -> history[absoluteRow]
+        else -> rows.getOrNull(absoluteRow - history.size)
+    }
+
+    private fun isWordCell(cell: TerminalCell?): Boolean {
+        val char = cell?.text?.firstOrNull() ?: return false
+        return char.isLetterOrDigit() || char == '_'
     }
 
     /** Applies SGR parameters to cells written from now on. */
@@ -317,6 +402,7 @@ class TerminalScreen(
     /** Resizes the visible grid, preserving overlapping content and clamping state. */
     fun resize(newSize: TerminalSize) {
         if (newSize == size) return
+        if (newSize.columns != size.columns) selection = null
 
         val resized = blankRows(newSize)
         for (row in 0 until minOf(size.rows, newSize.rows)) {
@@ -360,6 +446,8 @@ class TerminalScreen(
         title = title,
         cursorVisible = cursorVisible,
         autoWrap = autoWrap,
+        selection = selection,
+        selectedText = selectedText(),
     )
 
     private fun extendedColor(values: List<Int>, start: Int): Pair<AnsiColor, Int> {
@@ -438,9 +526,19 @@ class TerminalScreen(
 
     private fun scrollUp() {
         val evicted = rows.removeAt(topMargin)
+        val historyWasFull = history.size >= scrollbackLimit
         if (topMargin == 0 && scrollbackLimit > 0) {
             history.add(evicted.toList())
             while (history.size > scrollbackLimit) history.removeAt(0)
+        }
+        if (topMargin == 0 && (scrollbackLimit == 0 || historyWasFull)) {
+            selection = selection?.let { current ->
+                val shifted = current.copy(
+                    anchorRow = current.anchorRow - 1,
+                    headRow = current.headRow - 1,
+                )
+                if (shifted.startRow < 0) null else shifted
+            }
         }
         rows.add(bottomMargin, blankRow(size.columns))
         cursor = cursor.copy(row = bottomMargin)

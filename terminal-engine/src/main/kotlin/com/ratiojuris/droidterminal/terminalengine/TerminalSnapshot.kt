@@ -17,6 +17,12 @@ data class TerminalSnapshot(
     val title: String = "",
     val cursorVisible: Boolean = true,
     val autoWrap: Boolean = true,
+    val selection: TerminalSelection? = null,
+    val selectedText: String = "",
+    /** DECSET 2004: paste must be wrapped in ESC[200~ / ESC[201~. */
+    val bracketedPaste: Boolean = false,
+    /** DECSET 1: cursor keys must be encoded with SS3 when unmodified. */
+    val applicationCursorKeys: Boolean = false,
 ) {
     init {
         require(rows.size == size.rows) { "snapshot row count must match terminal size" }

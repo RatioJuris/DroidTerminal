@@ -13,7 +13,15 @@ enum class Modifier {
     ALT,
     SHIFT,
     FN,
+    /** Physical Meta/Windows key; encoded as xterm's 8 modifier bit. */
+    META,
 }
+
+/** Terminal modes that change how a key is encoded. */
+data class TerminalModes(
+    /** DECSET 1 / DECCKM: application cursor keys use SS3 instead of CSI. */
+    val applicationCursorKeys: Boolean = false,
+)
 
 /**
  * Immutable modifier state.

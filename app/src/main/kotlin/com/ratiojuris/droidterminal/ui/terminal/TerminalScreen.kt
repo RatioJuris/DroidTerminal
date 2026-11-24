@@ -10,6 +10,7 @@ package com.ratiojuris.droidterminal.ui.terminal
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,7 +57,13 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ratiojuris.droidterminal.connections.ConnectionRepository
@@ -64,6 +72,7 @@ import com.ratiojuris.droidterminal.keypad.KeySequences
 import com.ratiojuris.droidterminal.keypad.Modifier as KeypadModifier
 import com.ratiojuris.droidterminal.keypad.ModifierState
 import com.ratiojuris.droidterminal.keypad.TerminalKey
+import com.ratiojuris.droidterminal.keypad.TerminalModes
 import com.ratiojuris.droidterminal.sessions.SessionManager
 import com.ratiojuris.droidterminal.sessions.SessionState
 import com.ratiojuris.droidterminal.settings.AppSettings
@@ -111,6 +120,8 @@ fun TerminalScreen(
     val storedProfiles by connections.profiles.collectAsState(emptyList())
     val scope = rememberCoroutineScope()
     val terminalFocus = remember { FocusRequester() }
+    val commandFocus = remember { FocusRequester() }
+    val clipboard = LocalClipboardManager.current
 
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var input by rememberSaveable { mutableStateOf("") }
@@ -132,12 +143,29 @@ fun TerminalScreen(
     val lines = snapshot?.toUiLines().orEmpty()
     val cursorRow = (snapshot?.scrollback?.size ?: 0) + (snapshot?.cursor?.row ?: 0)
     val cursorColumn = snapshot?.cursor?.column ?: 0
+    val terminalModes = TerminalModes(applicationCursorKeys = snapshot?.applicationCursorKeys ?: false)
+    val bracketedPaste = snapshot?.bracketedPaste ?: false
+    val selectionActive = snapshot?.selection != null
+    val firstRenderedRow = (snapshot?.let { it.scrollback.size + it.rows.size } ?: 0) - lines.size
 
     LaunchedEffect(appSettings.scrollback) { sessions.configure(appSettings.scrollback) }
     LaunchedEffect(appSettings.showKeypad) { showKeypad = appSettings.showKeypad }
+    LaunchedEffect(appSettings.useSystemKeyboard) {
+        if (appSettings.useSystemKeyboard) commandFocus.requestFocus()
+    }
     LaunchedEffect(activeId) { activeId?.let { selectedId = it } }
     LaunchedEffect(cursorRow, cursorColumn) {
         scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
+    fun submitCommand() {
+        if (input.isBlank()) {
+            inputError = "Enter a command first"
+            return
+        }
+        sessions.write(input.toByteArray(Charsets.UTF_8) + KeySequences.bytes(TerminalKey.Enter, modes = terminalModes))
+        input = ""
+        inputError = null
     }
 
     BackHandler(enabled = showKeypad || connectStep != null || showProfilePicker) {
@@ -254,23 +282,42 @@ fun TerminalScreen(
                 .focusRequester(terminalFocus)
                 .clickable { terminalFocus.requestFocus() }
                 .onKeyEvent { event ->
+                    if (appSettings.useSystemKeyboard) return@onKeyEvent false
                     val key = hardwareKey(event) ?: return@onKeyEvent false
-                    sessions.write(KeySequences.bytes(key, hardwareModifiers(event)))
+                    sessions.write(KeySequences.bytes(key, hardwareModifiers(event), terminalModes))
                     true
                 },
             color = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.small,
         ) {
-            SelectionContainer {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .padding(12.dp),
-                ) {
-                    lines.forEach { line ->
-                        TerminalOutputLine(line, appSettings.fontSize)
-                    }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(12.dp),
+            ) {
+                val selection = snapshot?.selection
+                lines.forEachIndexed { index, line ->
+                    val absoluteRow = firstRenderedRow + index
+                    val range = selection?.columnRangeForRow(absoluteRow)
+                    val lastCharacter = (line.text.length - 1).coerceAtLeast(0)
+                    TerminalOutputLine(
+                        line = line,
+                        fontSize = appSettings.fontSize,
+                        selectionStart = range?.start,
+                        selectionEnd = range?.end?.let { end ->
+                            if (end == Int.MAX_VALUE) lastCharacter else end.coerceAtMost(lastCharacter)
+                        },
+                        onLongPress = {
+                            sessions.beginSelection(absoluteRow, 0)
+                            sessions.selectLine()
+                        },
+                        onTap = {
+                            if (selection != null) {
+                                sessions.moveSelectionHead(absoluteRow, selection.headColumn)
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -289,22 +336,19 @@ fun TerminalScreen(
                     label = { Text("Command") },
                     singleLine = true,
                     isError = inputError != null,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(commandFocus),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submitCommand() }),
                 )
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                    if (input.isBlank()) {
-                        inputError = "Enter a command first"
-                        return@Button
-                    }
-                    sessions.write(input.toByteArray(Charsets.UTF_8) + KeySequences.bytes(TerminalKey.Enter))
-                    input = ""
-                }) { Text("Send") }
+                Button(onClick = { submitCommand() }) { Text("Send") }
             }
-            inputError?.let {
-                ErrorState(it)
-                Spacer(Modifier.height(4.dp))
-            }
+        }
+        inputError?.let {
+            ErrorState(it)
+            Spacer(Modifier.height(4.dp))
         }
 
         Row(
@@ -324,13 +368,14 @@ fun TerminalScreen(
                 modifiers = modifiers,
                 capsLock = capsLock,
                 pad = pad,
+                selectionActive = selectionActive,
                 showFunctionRow = showFunctionRow,
                 haptics = appSettings.haptics,
                 onKey = { key ->
                     if (key == TerminalKey.CapsLock) {
                         capsLock = !capsLock
                     } else {
-                        sessions.write(KeySequences.bytes(key, modifiers))
+                        sessions.write(KeySequences.bytes(key, modifiers, terminalModes))
                         modifiers = modifiers.consume()
                     }
                 },
@@ -351,14 +396,33 @@ fun TerminalScreen(
                 },
                 onSelectionAction = { action ->
                     when (action) {
-                        SelectionAction.PASTE -> {
-                            // TODO(phase2): read the Android clipboard and emit ESC[200~ / ESC[201~ when DECSET 2004 is active
-                        }
+                        SelectionAction.SELECT -> sessions.beginSelection(cursorRow, cursorColumn)
+                        SelectionAction.SELECT_ALL -> sessions.selectAll()
+                        SelectionAction.SELECT_WORD -> sessions.selectWord()
+                        SelectionAction.SELECT_LINE -> sessions.selectLine()
+                        SelectionAction.CLEAR -> sessions.clearSelection()
+                        SelectionAction.MOVE_LEFT -> sessions.extendSelection(0, -1)
+                        SelectionAction.MOVE_UP -> sessions.extendSelection(-1, 0)
+                        SelectionAction.MOVE_DOWN -> sessions.extendSelection(1, 0)
+                        SelectionAction.MOVE_RIGHT -> sessions.extendSelection(0, 1)
                         SelectionAction.COPY -> {
-                            // TODO(phase2): copy the terminal selection to the clipboard and exit selection mode
+                            val copied = sessions.selectionText()
+                            if (copied.isEmpty()) {
+                                inputError = "Nothing selected to copy"
+                            } else {
+                                clipboard.setText(AnnotatedString(copied))
+                                sessions.clearSelection()
+                                inputError = null
+                            }
                         }
-                        else -> {
-                            // TODO(phase2): implement ${action.name} against the terminal selection model
+                        SelectionAction.PASTE -> {
+                            val pasted = clipboard.getText()?.text
+                            if (pasted.isNullOrEmpty()) {
+                                inputError = "Clipboard is empty"
+                            } else {
+                                sessions.write(KeySequences.paste(pasted, bracketedPaste).toByteArray(Charsets.UTF_8))
+                                inputError = null
+                            }
                         }
                     }
                 },
@@ -591,20 +655,44 @@ private fun HostKeyDialog(info: HostKeyInfo, onAccept: () -> Unit, onReject: () 
 }
 
 @Composable
-private fun TerminalOutputLine(line: TerminalLine, fontSize: Float) {
+private fun TerminalOutputLine(
+    line: TerminalLine,
+    fontSize: Float,
+    selectionStart: Int? = null,
+    selectionEnd: Int? = null,
+    onLongPress: () -> Unit = {},
+    onTap: () -> Unit = {},
+) {
     val colour = when (line.kind) {
         TerminalLineKind.COMMAND -> MaterialTheme.colorScheme.primary
         TerminalLineKind.ERROR -> MaterialTheme.colorScheme.error
         TerminalLineKind.SUCCESS -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onSurface
     }
+    val style = MaterialTheme.typography.bodySmall.copy(
+        fontFamily = FontFamily.Monospace,
+        fontSize = fontSize.sp,
+    )
+    val hasSelection = selectionStart != null && selectionEnd != null &&
+        selectionStart <= selectionEnd && selectionStart in line.text.indices
+    val rendered = if (hasSelection && selectionStart != null && selectionEnd != null) {
+        val from = selectionStart.coerceIn(0, line.text.length)
+        val to = (selectionEnd + 1).coerceIn(from, line.text.length)
+        buildAnnotatedString {
+            append(line.text)
+            addStyle(SpanStyle(background = MaterialTheme.colorScheme.secondaryContainer), from, to)
+        }
+    } else {
+        AnnotatedString(line.text)
+    }
+
     Text(
-        text = line.text,
-        style = MaterialTheme.typography.bodySmall.copy(
-            fontFamily = FontFamily.Monospace,
-            fontSize = fontSize.sp,
-        ),
+        text = rendered,
+        style = style,
         color = colour,
+        modifier = Modifier.pointerInput(onLongPress, onTap) {
+            detectTapGestures(onLongPress = { onLongPress() }, onTap = { onTap() })
+        },
     )
 }
 
@@ -657,5 +745,6 @@ private fun hardwareModifiers(event: KeyEvent): ModifierState {
     if (event.isCtrlPressed) pressed = pressed + KeypadModifier.CONTROL
     if (event.isAltPressed) pressed = pressed + KeypadModifier.ALT
     if (event.isShiftPressed) pressed = pressed + KeypadModifier.SHIFT
+    if (event.nativeKeyEvent.isMetaPressed) pressed = pressed + KeypadModifier.META
     return ModifierState(pressed = pressed)
 }
