@@ -119,7 +119,6 @@ fun VaultScreen(
                         passphraseError,
                         password = true,
                     )
-                    passphraseError?.let { ErrorState(it) }
                     Button(onClick = {
                         passphraseError = UiValidation.validatePassphrase(passphrase)
                         if (passphraseError == null) {

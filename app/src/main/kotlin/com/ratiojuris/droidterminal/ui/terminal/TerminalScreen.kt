@@ -109,6 +109,7 @@ fun TerminalScreen(
     var showKeypad by remember { mutableStateOf(appSettings.showKeypad) }
     var connectStep by remember { mutableStateOf<ConnectStep?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
+    var isConnecting by remember { mutableStateOf(false) }
     var showProfilePicker by remember { mutableStateOf(false) }
     var modifiers by remember { mutableStateOf(ModifierState()) }
     val scrollState = rememberScrollState()
@@ -152,8 +153,11 @@ fun TerminalScreen(
             runCatching { connections.touch(profile.id) }
             connectStep = null
             connectError = null
+            isConnecting = false
         } else {
+            connectStep = null
             connectError = "Connection failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+            isConnecting = false
         }
     }
 
@@ -165,6 +169,7 @@ fun TerminalScreen(
         }
         when (appSettings.hostKeyPolicy) {
             AppSettings.HOST_KEY_STRICT -> {
+                isConnecting = false
                 connectError = "Host key for ${profile.host} is not trusted"
             }
             else -> {
@@ -172,6 +177,7 @@ fun TerminalScreen(
                     gateway.fetchHostKey(profile.host, profile.port, profile.username)
                 }
                 if (fetched.isFailure) {
+                    isConnecting = false
                     connectError = "Host key read failed: ${fetched.exceptionOrNull()?.message ?: "unknown error"}"
                     return
                 }
@@ -181,11 +187,13 @@ fun TerminalScreen(
                         connections.trustHost(info.host, info.fingerprint, info.algorithm)
                     }
                     if (accepted.isFailure) {
+                        isConnecting = false
                         connectError = "Host key acceptance failed: ${accepted.exceptionOrNull()?.message}"
                     } else {
                         completeConnect(profile, credential, info.fingerprint)
                     }
                 } else {
+                    isConnecting = false
                     connectStep = ConnectStep.HostKey(profile, credential, info)
                 }
             }
@@ -222,7 +230,7 @@ fun TerminalScreen(
             })
         }
 
-        if (connectStep != null || selected?.state == SessionState.CONNECTING) {
+        if (isConnecting || connectStep != null || selected?.state == SessionState.CONNECTING) {
             LoadingState("Connecting…")
         }
 
@@ -332,6 +340,8 @@ fun TerminalScreen(
             profile = step.profile,
             onDismiss = { connectStep = null },
             onSubmit = { credential ->
+                connectStep = null
+                isConnecting = true
                 scope.launch { resolveHostKey(step.profile, credential) }
             },
         )
@@ -341,11 +351,14 @@ fun TerminalScreen(
         HostKeyDialog(
             info = step.info,
             onAccept = {
+                connectStep = null
+                isConnecting = true
                 scope.launch {
                     val accepted = runCatching {
                         connections.trustHost(step.info.host, step.info.fingerprint, step.info.algorithm)
                     }
                     if (accepted.isFailure) {
+                        isConnecting = false
                         connectError = "Host key acceptance failed: ${accepted.exceptionOrNull()?.message}"
                     } else {
                         completeConnect(step.profile, step.credential, step.info.fingerprint)
