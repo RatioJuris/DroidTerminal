@@ -26,3 +26,7 @@ between the new directive and the standing repository constraints without blocki
 - **Host-key policy mapping.** `Warn` reads the live fingerprint and requires explicit out-of-band acceptance; `Strict` refuses to connect until a fingerprint has been accepted; `Trust on first use` records the first presented fingerprint automatically and still rejects later changes.
 - **Agent auth.** `AGENT` remains selectable in the Phase 1 form but is not implemented in Phase 2. Selecting it for a terminal connection surfaces a clear error rather than silently falling back to another method.
 - **Keypad input.** Shortcut keys emit real terminal byte sequences from the keypad module. Momentary modifiers toggle on tap; when the saved long-press setting is enabled, a long press locks the modifier until it is tapped again or cleared.
+
+## Phase 3
+
+- **Debug APK signature churn.** Each GitHub-hosted CI run generates a fresh Android debug signing key, so a newly published APK cannot be installed over the previous one with `install -r`. For device verification the old debug app is uninstalled and its test-only data (the `Lab` profile and `API` vault item created during the walkthrough) is recreated. This is a test-device action only; no user data was present in the app before the walkthrough.
