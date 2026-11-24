@@ -305,7 +305,7 @@ fun TerminalScreen(
                         line = line,
                         fontSize = appSettings.fontSize,
                         selectionStart = range?.start,
-                        selectionEnd = range?.end?.let { end ->
+                        selectionEnd = range?.last?.let { end ->
                             if (end == Int.MAX_VALUE) lastCharacter else end.coerceAtMost(lastCharacter)
                         },
                         onLongPress = {

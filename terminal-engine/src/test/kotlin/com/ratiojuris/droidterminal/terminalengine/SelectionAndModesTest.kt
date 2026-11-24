@@ -72,6 +72,7 @@ class SelectionAndModesTest {
         val emulator = TerminalEmulator(TerminalSize(10, 1), scrollbackLimit = 1)
         emulator.feed("first")
         emulator.beginSelection(0, 0)
+        emulator.selectLine()
         emulator.feed("\r\nsecond")
 
         assertEquals("first", emulator.snapshot().selectedText)
@@ -86,6 +87,7 @@ class SelectionAndModesTest {
         emulator.feed("first")
         emulator.feed("\r\nsecond")
         emulator.beginSelection(1, 0)
+        emulator.selectLine()
 
         emulator.feed("\r\nthird")
 
