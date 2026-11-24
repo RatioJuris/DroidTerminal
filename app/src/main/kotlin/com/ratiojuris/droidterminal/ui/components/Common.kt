@@ -158,7 +158,7 @@ fun KeyCap(
             longPressFired = false
         },
         modifier = modifier
-            .height(40.dp)
+            .height(34.dp)
             .pointerInput(onLongClick) {
                 detectTapGestures(
                     onLongPress = {
