@@ -7,7 +7,9 @@
 
 package com.ratiojuris.droidterminal.ui.terminal
 
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,8 +44,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +74,6 @@ import com.ratiojuris.droidterminal.sshengine.SshGateway
 import com.ratiojuris.droidterminal.terminalengine.TerminalSize
 import com.ratiojuris.droidterminal.ui.components.ErrorState
 import com.ratiojuris.droidterminal.ui.components.FormTextField
-import com.ratiojuris.droidterminal.ui.components.KeyCap
 import com.ratiojuris.droidterminal.ui.components.LoadingState
 import com.ratiojuris.droidterminal.ui.model.AuthType
 import com.ratiojuris.droidterminal.ui.model.ConnectionProfile
@@ -100,7 +110,7 @@ fun TerminalScreen(
     val appSettings by settings.settings.collectAsState(AppSettings())
     val storedProfiles by connections.profiles.collectAsState(emptyList())
     val scope = rememberCoroutineScope()
-    val hapticFeedback = LocalHapticFeedback.current
+    val terminalFocus = remember { FocusRequester() }
 
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var input by rememberSaveable { mutableStateOf("") }
@@ -111,6 +121,9 @@ fun TerminalScreen(
     var isConnecting by remember { mutableStateOf(false) }
     var showProfilePicker by remember { mutableStateOf(false) }
     var modifiers by remember { mutableStateOf(ModifierState()) }
+    var capsLock by remember { mutableStateOf(false) }
+    var pad by remember { mutableStateOf(KeyboardPad.KEYS) }
+    var showFunctionRow by remember { mutableStateOf(true) }
     val scrollState = rememberScrollState()
 
     val profiles = storedProfiles.map { it.toUi() }
@@ -237,7 +250,14 @@ fun TerminalScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp)
+                .focusRequester(terminalFocus)
+                .clickable { terminalFocus.requestFocus() }
+                .onKeyEvent { event ->
+                    val key = hardwareKey(event) ?: return@onKeyEvent false
+                    sessions.write(KeySequences.bytes(key, hardwareModifiers(event)))
+                    true
+                },
             color = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.small,
         ) {
@@ -255,69 +275,94 @@ fun TerminalScreen(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = {
-                    input = it
-                    inputError = null
-                },
-                label = { Text("Command") },
-                singleLine = true,
-                isError = inputError != null,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = {
-                if (input.isBlank()) {
-                    inputError = "Enter a command first"
-                    return@Button
-                }
-                val enter = KeySequences.bytes(
-                    TerminalKey.Custom("Enter", "\r"),
-                    ModifierState(),
+        if (appSettings.useSystemKeyboard) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = {
+                        input = it
+                        inputError = null
+                    },
+                    label = { Text("Command") },
+                    singleLine = true,
+                    isError = inputError != null,
+                    modifier = Modifier.weight(1f),
                 )
-                sessions.write(input.toByteArray(Charsets.UTF_8) + enter)
-                input = ""
-            }) { Text("Send") }
-        }
-
-        inputError?.let {
-            ErrorState(it)
-            Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    if (input.isBlank()) {
+                        inputError = "Enter a command first"
+                        return@Button
+                    }
+                    sessions.write(input.toByteArray(Charsets.UTF_8) + KeySequences.bytes(TerminalKey.Enter))
+                    input = ""
+                }) { Text("Send") }
+            }
+            inputError?.let {
+                ErrorState(it)
+                Spacer(Modifier.height(4.dp))
+            }
         }
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Shortcut keypad", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (showKeypad) "Keyboard" else "Keyboard hidden",
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Spacer(Modifier.weight(1f))
             Switch(checked = showKeypad, onCheckedChange = { showKeypad = it })
         }
 
-        if (showKeypad) {
-            ShortcutKeypad(
+        if (showKeypad && !appSettings.useSystemKeyboard) {
+            InAppKeyboard(
                 modifiers = modifiers,
-                onModifier = { key, lock ->
-                    val modifier = keypadModifier(key)
-                    if (modifier != null) {
-                        modifiers = if (lock) modifiers.lock(modifier) else modifiers.toggle(modifier)
-                    }
-                },
+                capsLock = capsLock,
+                pad = pad,
+                showFunctionRow = showFunctionRow,
+                haptics = appSettings.haptics,
                 onKey = { key ->
-                    if (appSettings.haptics) {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    }
-                    if (key is TerminalKey.Custom && key.label == "Clr") {
-                        modifiers = ModifierState()
+                    if (key == TerminalKey.CapsLock) {
+                        capsLock = !capsLock
                     } else {
                         sessions.write(KeySequences.bytes(key, modifiers))
+                        modifiers = modifiers.consume()
                     }
                 },
+                onModifierTap = { modifier, tap ->
+                    modifiers = when (tap) {
+                        ModifierTap.SINGLE -> modifiers.toggle(modifier)
+                        ModifierTap.DOUBLE -> modifiers.lock(modifier)
+                    }
+                },
+                onToggleCaps = { capsLock = !capsLock },
+                onTogglePad = {
+                    pad = if (pad == KeyboardPad.KEYS) KeyboardPad.SELECT else KeyboardPad.KEYS
+                },
+                onToggleFunctionRow = { showFunctionRow = !showFunctionRow },
+                onClearModifiers = {
+                    modifiers = ModifierState()
+                    capsLock = false
+                },
+                onSelectionAction = { action ->
+                    when (action) {
+                        SelectionAction.PASTE -> {
+                            // TODO(phase2): read the Android clipboard and emit ESC[200~ / ESC[201~ when DECSET 2004 is active
+                        }
+                        SelectionAction.COPY -> {
+                            // TODO(phase2): copy the terminal selection to the clipboard and exit selection mode
+                        }
+                        else -> {
+                            // TODO(phase2): implement ${action.name} against the terminal selection model
+                        }
+                    }
+                },
+                onHide = { showKeypad = false },
             )
         }
     }
@@ -563,77 +608,54 @@ private fun TerminalOutputLine(line: TerminalLine, fontSize: Float) {
     )
 }
 
-@Composable
-private fun ShortcutKeypad(
-    modifiers: ModifierState,
-    onModifier: (TerminalKey, Boolean) -> Unit,
-    onKey: (TerminalKey) -> Unit,
-) {
-    val rows = listOf(
-        listOf(
-            TerminalKey.Control,
-            TerminalKey.Alt,
-            TerminalKey.Escape,
-            TerminalKey.Tab,
-            TerminalKey.Shift,
-            TerminalKey.Fn,
-        ),
-        listOf(
-            TerminalKey.Arrow(ArrowDirection.UP),
-            TerminalKey.Arrow(ArrowDirection.DOWN),
-            TerminalKey.Arrow(ArrowDirection.LEFT),
-            TerminalKey.Arrow(ArrowDirection.RIGHT),
-            TerminalKey.Home,
-            TerminalKey.End,
-        ),
-        listOf(
-            TerminalKey.ControlLetter('C'),
-            TerminalKey.ControlLetter('D'),
-            TerminalKey.ControlLetter('Z'),
-            TerminalKey.Custom("PgUp", "\u001B[5~"),
-            TerminalKey.Custom("PgDn", "\u001B[6~"),
-            TerminalKey.Custom("Clr", ""),
-        ),
-        listOf(
-            TerminalKey.ControlLetter('E'),
-            TerminalKey.ControlLetter('W'),
-            TerminalKey.ControlLetter('U'),
-            TerminalKey.Custom("Enter", "\r"),
-            TerminalKey.Custom("Backspace", "\u007F"),
-            TerminalKey.ControlLetter('A'),
-        ),
-        (1..6).map { TerminalKey.FunctionKey(it) },
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(216.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        rows.forEach { row ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                row.forEach { key ->
-                    val modifier = keypadModifier(key)
-                    KeyCap(
-                        text = if (modifier != null && modifiers.isActive) "•${key.label}" else key.label,
-                        onClick = {
-                            if (modifier != null) onModifier(key, false) else onKey(key)
-                        },
-                        onLongClick = if (modifier != null) ({ onModifier(key, true) }) else null,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
+/** Maps a physical-keyboard event to the same key model used by the in-app keyboard. */
+private fun hardwareKey(event: KeyEvent): TerminalKey? {
+    if (event.type != KeyEventType.KeyDown) return null
+    val special = when (event.key) {
+        Key.Enter -> TerminalKey.Enter
+        Key.Backspace -> TerminalKey.Backspace
+        Key.Tab -> TerminalKey.Tab
+        Key.Escape -> TerminalKey.Escape
+        Key.DirectionLeft -> TerminalKey.Arrow(ArrowDirection.LEFT)
+        Key.DirectionRight -> TerminalKey.Arrow(ArrowDirection.RIGHT)
+        Key.DirectionUp -> TerminalKey.Arrow(ArrowDirection.UP)
+        Key.DirectionDown -> TerminalKey.Arrow(ArrowDirection.DOWN)
+        Key.MoveHome -> TerminalKey.Home
+        Key.MoveEnd -> TerminalKey.End
+        Key.PageUp -> TerminalKey.PageUp
+        Key.PageDown -> TerminalKey.PageDown
+        Key.Delete -> TerminalKey.Delete
+        Key.Insert -> TerminalKey.Insert
+        Key.F1 -> TerminalKey.FunctionKey(1)
+        Key.F2 -> TerminalKey.FunctionKey(2)
+        Key.F3 -> TerminalKey.FunctionKey(3)
+        Key.F4 -> TerminalKey.FunctionKey(4)
+        Key.F5 -> TerminalKey.FunctionKey(5)
+        Key.F6 -> TerminalKey.FunctionKey(6)
+        Key.F7 -> TerminalKey.FunctionKey(7)
+        Key.F8 -> TerminalKey.FunctionKey(8)
+        Key.F9 -> TerminalKey.FunctionKey(9)
+        Key.F10 -> TerminalKey.FunctionKey(10)
+        Key.F11 -> TerminalKey.FunctionKey(11)
+        Key.F12 -> TerminalKey.FunctionKey(12)
+        else -> null
     }
+    if (special != null) return special
+
+    val unicode = event.nativeKeyEvent.unicodeChar
+    if (unicode > 0) return TerminalKey.Character(unicode.toChar())
+
+    val keyCode = event.nativeKeyEvent.keyCode
+    if (event.isCtrlPressed && keyCode in AndroidKeyEvent.KEYCODE_A..AndroidKeyEvent.KEYCODE_Z) {
+        return TerminalKey.Character(('a' + (keyCode - AndroidKeyEvent.KEYCODE_A)).toChar())
+    }
+    return null
 }
 
-private fun keypadModifier(key: TerminalKey): KeypadModifier? = when (key) {
-    TerminalKey.Control -> KeypadModifier.CONTROL
-    TerminalKey.Alt -> KeypadModifier.ALT
-    TerminalKey.Shift -> KeypadModifier.SHIFT
-    TerminalKey.Fn -> KeypadModifier.FN
-    else -> null
+private fun hardwareModifiers(event: KeyEvent): ModifierState {
+    var pressed = emptySet<KeypadModifier>()
+    if (event.isCtrlPressed) pressed = pressed + KeypadModifier.CONTROL
+    if (event.isAltPressed) pressed = pressed + KeypadModifier.ALT
+    if (event.isShiftPressed) pressed = pressed + KeypadModifier.SHIFT
+    return ModifierState(pressed = pressed)
 }

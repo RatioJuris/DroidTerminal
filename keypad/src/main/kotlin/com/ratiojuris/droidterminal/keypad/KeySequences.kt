@@ -11,12 +11,29 @@ package com.ratiojuris.droidterminal.keypad
 object KeySequences {
     private const val ESC = '\u001B'
 
-    /** Returns the terminal byte sequence for [key] under [modifiers]. */
+    /**
+     * Returns the terminal byte sequence for [key] under [modifiers].
+     *
+     * TODO(phase2): DECCKM-aware Home/End and full xterm modifier parameters for
+     * modified navigation/function keys. Bracketed paste is a clipboard-path concern.
+     */
     fun sequence(key: TerminalKey, modifiers: ModifierState = ModifierState.NONE): String {
         val base = when (key) {
-            TerminalKey.Control, TerminalKey.Alt, TerminalKey.Shift, TerminalKey.Fn -> ""
+            TerminalKey.Control,
+            TerminalKey.Alt,
+            TerminalKey.Shift,
+            TerminalKey.Fn,
+            TerminalKey.CapsLock,
+            -> ""
             TerminalKey.Escape -> ESC.toString()
             TerminalKey.Tab -> if (modifiers.isEnabled(Modifier.SHIFT)) "${ESC}[Z" else "\t"
+            TerminalKey.Enter -> "\r"
+            TerminalKey.Backspace -> 0x7F.toChar().toString()
+            TerminalKey.Delete -> "${ESC}[3~"
+            TerminalKey.Insert -> "${ESC}[2~"
+            TerminalKey.PageUp -> "${ESC}[5~"
+            TerminalKey.PageDown -> "${ESC}[6~"
+            is TerminalKey.Character -> characterSequence(key.char, modifiers)
             is TerminalKey.ControlLetter -> controlByte(key.letter).toString()
             is TerminalKey.Arrow -> arrowSequence(key.direction, modifiers)
             TerminalKey.Home -> "${ESC}[H"
@@ -35,6 +52,20 @@ object KeySequences {
     fun bytes(key: TerminalKey, modifiers: ModifierState = ModifierState.NONE): ByteArray =
         sequence(key, modifiers).map { it.code.toByte() }.toByteArray()
 
+    private fun characterSequence(char: Char, modifiers: ModifierState): String {
+        if (!modifiers.isEnabled(Modifier.CONTROL)) return char.toString()
+        val code = char.code
+        val controlled = when {
+            code in 0x61..0x7A -> (code - 0x60).toChar() // a..z
+            code in 0x41..0x5A -> (code - 0x40).toChar() // A..Z
+            char == ' ' -> '\u0000'
+            char == '[' -> ESC
+            code in 0x5C..0x5F -> (code - 0x40).toChar() // \ ] ^ _
+            else -> char
+        }
+        return controlled.toString()
+    }
+
     private fun arrowSequence(direction: ArrowDirection, modifiers: ModifierState): String {
         val final = when (direction) {
             ArrowDirection.UP -> "A"
@@ -42,6 +73,8 @@ object KeySequences {
             ArrowDirection.RIGHT -> "C"
             ArrowDirection.LEFT -> "D"
         }
+        // TODO(phase2): DECCKM switches these to ESC O A/B/C/D; full xterm modifier
+        // parameters are needed for Ctrl/Alt/Meta combinations on arrows and Home/End.
         return if (modifiers.isEnabled(Modifier.SHIFT)) "${ESC}[1;2$final" else "$ESC[$final"
     }
 

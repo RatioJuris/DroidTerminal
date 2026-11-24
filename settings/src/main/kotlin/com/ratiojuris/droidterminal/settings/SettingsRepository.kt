@@ -28,7 +28,7 @@ class SettingsRepository(private val context: Context) {
             scrollback = prefs[Keys.SCROLLBACK] ?: AppSettings.DEFAULT_SCROLLBACK,
             showKeypad = prefs[Keys.SHOW_KEYPAD] ?: true,
             haptics = prefs[Keys.HAPTICS] ?: true,
-            longPressModifier = prefs[Keys.LONG_PRESS_MODIFIER] ?: false,
+            useSystemKeyboard = prefs[Keys.USE_SYSTEM_KEYBOARD] ?: false,
             autoLockVault = prefs[Keys.AUTO_LOCK_VAULT] ?: true,
             requireBiometric = prefs[Keys.REQUIRE_BIOMETRIC] ?: false,
             hostKeyPolicy = prefs[Keys.HOST_KEY_POLICY] ?: AppSettings.HOST_KEY_WARN,
@@ -41,7 +41,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.SCROLLBACK] = value.scrollback
             prefs[Keys.SHOW_KEYPAD] = value.showKeypad
             prefs[Keys.HAPTICS] = value.haptics
-            prefs[Keys.LONG_PRESS_MODIFIER] = value.longPressModifier
+            prefs[Keys.USE_SYSTEM_KEYBOARD] = value.useSystemKeyboard
             prefs[Keys.AUTO_LOCK_VAULT] = value.autoLockVault
             prefs[Keys.REQUIRE_BIOMETRIC] = value.requireBiometric
             prefs[Keys.HOST_KEY_POLICY] = value.hostKeyPolicy
@@ -55,7 +55,7 @@ class SettingsRepository(private val context: Context) {
         val SCROLLBACK = intPreferencesKey("scrollback")
         val SHOW_KEYPAD = booleanPreferencesKey("show_keypad")
         val HAPTICS = booleanPreferencesKey("haptics")
-        val LONG_PRESS_MODIFIER = booleanPreferencesKey("long_press_modifier")
+        val USE_SYSTEM_KEYBOARD = booleanPreferencesKey("use_system_keyboard")
         val AUTO_LOCK_VAULT = booleanPreferencesKey("auto_lock_vault")
         val REQUIRE_BIOMETRIC = booleanPreferencesKey("require_biometric")
         val HOST_KEY_POLICY = intPreferencesKey("host_key_policy")

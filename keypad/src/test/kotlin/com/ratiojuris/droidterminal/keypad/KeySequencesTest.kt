@@ -78,4 +78,33 @@ class KeySequencesTest {
         val controlled = ModifierState(pressed = setOf(Modifier.CONTROL))
         assertArrayEquals(byteArrayOf(0x01), KeySequences.bytes(custom, controlled))
     }
+
+    @Test
+    fun `printable keys send their character with shift resolved by the UI`() {
+        assertEquals("a", KeySequences.sequence(TerminalKey.Character('a')))
+        assertEquals("A", KeySequences.sequence(TerminalKey.Character('A')))
+        assertEquals("!", KeySequences.sequence(TerminalKey.Character('!')))
+        assertEquals(" ", KeySequences.sequence(TerminalKey.Character(' ')))
+    }
+
+    @Test
+    fun `control applies to printable characters and special codes`() {
+        val ctrl = ModifierState(pressed = setOf(Modifier.CONTROL))
+        assertArrayEquals(byteArrayOf(0x01), KeySequences.bytes(TerminalKey.Character('a'), ctrl))
+        assertArrayEquals(byteArrayOf(0x1B), KeySequences.bytes(TerminalKey.Character('['), ctrl))
+        assertArrayEquals(byteArrayOf(0x1C), KeySequences.bytes(TerminalKey.Character('\\'), ctrl))
+        assertArrayEquals(byteArrayOf(0x1D), KeySequences.bytes(TerminalKey.Character(']'), ctrl))
+        assertArrayEquals(byteArrayOf(0x00), KeySequences.bytes(TerminalKey.Character(' '), ctrl))
+    }
+
+    @Test
+    fun `editing and navigation keys use standard sequences`() {
+        assertEquals("\r", KeySequences.sequence(TerminalKey.Enter))
+        assertEquals("\u007F", KeySequences.sequence(TerminalKey.Backspace))
+        assertEquals("\u001B[3~", KeySequences.sequence(TerminalKey.Delete))
+        assertEquals("\u001B[2~", KeySequences.sequence(TerminalKey.Insert))
+        assertEquals("\u001B[5~", KeySequences.sequence(TerminalKey.PageUp))
+        assertEquals("\u001B[6~", KeySequences.sequence(TerminalKey.PageDown))
+        assertEquals("", KeySequences.sequence(TerminalKey.CapsLock))
+    }
 }

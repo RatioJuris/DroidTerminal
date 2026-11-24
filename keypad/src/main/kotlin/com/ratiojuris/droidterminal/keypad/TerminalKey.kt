@@ -40,6 +40,40 @@ sealed interface TerminalKey {
         override val label: String = "Tab"
     }
 
+    data object Enter : TerminalKey {
+        override val label: String = "Enter"
+    }
+
+    data object Backspace : TerminalKey {
+        override val label: String = "Backspace"
+    }
+
+    data object Delete : TerminalKey {
+        override val label: String = "Del"
+    }
+
+    data object Insert : TerminalKey {
+        override val label: String = "Ins"
+    }
+
+    data object PageUp : TerminalKey {
+        override val label: String = "PgUp"
+    }
+
+    data object PageDown : TerminalKey {
+        override val label: String = "PgDn"
+    }
+
+    data object CapsLock : TerminalKey {
+        override val label: String = "Caps"
+    }
+
+    /** A single printable character. Shift/Caps are resolved by the UI before encoding. */
+    data class Character(val char: Char) : TerminalKey {
+        override val label: String
+            get() = char.toString()
+    }
+
     data object Shift : TerminalKey {
         override val label: String = "Shift"
     }

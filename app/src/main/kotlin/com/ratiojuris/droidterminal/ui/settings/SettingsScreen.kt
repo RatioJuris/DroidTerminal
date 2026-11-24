@@ -52,7 +52,7 @@ fun SettingsScreen(repository: SettingsRepository) {
     var scrollback by rememberSaveable { mutableIntStateOf(persisted.scrollback) }
     var showKeypad by rememberSaveable { mutableStateOf(persisted.showKeypad) }
     var haptics by rememberSaveable { mutableStateOf(persisted.haptics) }
-    var longPressModifier by rememberSaveable { mutableStateOf(persisted.longPressModifier) }
+    var useSystemKeyboard by rememberSaveable { mutableStateOf(persisted.useSystemKeyboard) }
     var autoLock by rememberSaveable { mutableStateOf(persisted.autoLockVault) }
     var biometric by rememberSaveable { mutableStateOf(persisted.requireBiometric) }
     var hostKeyPolicy by rememberSaveable { mutableIntStateOf(persisted.hostKeyPolicy) }
@@ -63,7 +63,7 @@ fun SettingsScreen(repository: SettingsRepository) {
         scrollback = persisted.scrollback
         showKeypad = persisted.showKeypad
         haptics = persisted.haptics
-        longPressModifier = persisted.longPressModifier
+        useSystemKeyboard = persisted.useSystemKeyboard
         autoLock = persisted.autoLockVault
         biometric = persisted.requireBiometric
         hostKeyPolicy = persisted.hostKeyPolicy
@@ -74,7 +74,7 @@ fun SettingsScreen(repository: SettingsRepository) {
         scrollback = scrollback,
         showKeypad = showKeypad,
         haptics = haptics,
-        longPressModifier = longPressModifier,
+        useSystemKeyboard = useSystemKeyboard,
         autoLockVault = autoLock,
         requireBiometric = biometric,
         hostKeyPolicy = hostKeyPolicy,
@@ -109,12 +109,12 @@ fun SettingsScreen(repository: SettingsRepository) {
             }
         }
 
-        SectionHeader("Shortcut keypad")
+        SectionHeader("Keyboard")
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SettingToggle("Show keypad by default", showKeypad) { showKeypad = it }
+                SettingToggle("Show keyboard by default", showKeypad) { showKeypad = it }
                 SettingToggle("Haptic feedback on key press", haptics) { haptics = it }
-                SettingToggle("Long-press sets locked modifier", longPressModifier) { longPressModifier = it }
+                SettingToggle("Use system keyboard instead", useSystemKeyboard) { useSystemKeyboard = it }
             }
         }
 
@@ -155,7 +155,7 @@ fun SettingsScreen(repository: SettingsRepository) {
                             scrollback = defaults.scrollback
                             showKeypad = defaults.showKeypad
                             haptics = defaults.haptics
-                            longPressModifier = defaults.longPressModifier
+                            useSystemKeyboard = defaults.useSystemKeyboard
                             autoLock = defaults.autoLockVault
                             biometric = defaults.requireBiometric
                             hostKeyPolicy = defaults.hostKeyPolicy

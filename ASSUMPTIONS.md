@@ -30,3 +30,13 @@ between the new directive and the standing repository constraints without blocki
 ## Phase 3
 
 - **Debug APK signature churn.** Each GitHub-hosted CI run generates a fresh Android debug signing key, so a newly published APK cannot be installed over the previous one with `install -r`. For device verification the old debug app is uninstalled and its test-only data (the `Lab` profile and `API` vault item created during the walkthrough) is recreated. This is a test-device action only; no user data was present in the app before the walkthrough.
+
+## Custom keyboard
+
+- **Branch and CI.** Work is on `custom-keyboard` branched from `develop` at `7fa7ce4`; nothing is merged. The user chose "push branch to CI", which overrides the earlier "do not push" instruction. `.github/workflows/ci.yml` only fires on pushes to `develop` or PRs targeting `develop`/`main`, so each phase is pushed and a **draft PR to `develop`** is opened to trigger Actions. The PR is never merged. Local Gradle is still not invoked.
+- **Layering.** The `keypad` module stays pure JVM (byte encoding only, no Compose dependency). The Compose keyboard UI is a new app-module component. Byte output continues to flow through `KeySequences` → `SessionManager.write`.
+- **portrait key width conflict.** A literal 40dp minimum on the main letter rows is geometrically impossible on a ~360dp portrait phone: row 2 has 14 keys, requiring ~560dp. Resolution: keys fill the available width with no horizontal scrolling on letter rows, keep a 48dp hit height, and use a smaller width on narrow portrait screens. F-row is horizontally scrollable. Phase 3 reviews actual tappability.
+- **Modifier model stays source-compatible.** `ModifierState` keeps `pressed`/`locked` so existing consumers compile; `consume()` clears one-shot modifiers after the next key. Tap = one-shot, double-tap = locked, tap-again = off. `longPressModifier` is removed as dead configuration.
+- **Physical keyboard path.** Removing the command field would otherwise regress hardware-key input. The terminal surface is made focusable with `onKeyEvent` routing hardware keys through the same byte path. No IME is involved because a plain focusable surface has no `InputConnection`. Full xterm parity for hardware keys is Phase 2.
+- **System keyboard fallback.** The setting is added and functional in Phase 1 (shows a plain text field + Send only when enabled). Deep IME/bracketed-paste behaviour is Phase 2.
+- **Selection pad.** Phase 1 renders the pad and routes action callbacks; terminal-buffer selection, clipboard access and bracketed paste are Phase 2 TODOs. The `SELECT` badge tracks the active pad in Phase 1 and real selection mode in Phase 2.
