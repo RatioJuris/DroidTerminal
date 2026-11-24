@@ -5,7 +5,7 @@ Scope: walk each implemented flow, record only observed issues, then fix them wi
 ## Environment
 
 - Device: `192.168.31.177:5555` (Motorola One Power).
-- Build: CI debug APK `builds/debug/droidterminal-debug-14-1dfbf2338a628558a4cb1fc71d1d3c28e7b179ee.apk` (run 14 / commit `1dfbf23`).
+- Builds: `builds/debug/droidterminal-debug-14-1dfbf2338a628558a4cb1fc71d1d3c28e7b179ee.apk` (run 14 / commit `1dfbf23`) for keypad/validation/Settings checks; `builds/debug/droidterminal-debug-15-85c74984757e464de0f1e16eed064c886a4a1f3e.apk` (run 15 / commit `85c7498`) for the vault crypto fix.
 - Method: ADB launch, taps/text via `input`, UI hierarchy via `uiautomator dump`, screenshots where useful.
 - SSH test target `192.168.31.177:22` did not present an SSH host key: `Host key read failed: Host 192.168.31.177 did not present a key`. Connected terminal/SFTP flows could not be exercised against that endpoint.
 
@@ -21,7 +21,7 @@ Scope: walk each implemented flow, record only observed issues, then fix them wi
 
 3. **Vault passphrase validation appears twice.** Entering a too-short passphrase and tapping Unlock showed `Passphrase must be at least 8 characters` both under the field and in the page-level error area. Source: hierarchy after `abc` + Unlock showed duplicate messages at bounds `[132,746][841,794]` and `[120,854][960,914]`. Status: fixed and verified — on build 14, hierarchy after `abc` + Unlock showed a single message at `[132,746][841,794]`.
 
-4. **Vault credential save fails with a crypto error.** On build 14, unlocking the vault, adding label `API` / value `secret` and tapping Save produced `Save failed: Caller-provided IV not permitted` with a Retry action; the credential was never stored. Root cause: `VaultCrypto.encrypt` passed a `GCMParameterSpec` into `cipher.init(ENCRYPT_MODE, …)` for per-item Android Keystore keys, which Android Keystore forbids. Status: fixed — encryption now lets the cipher generate the IV and reads it back via `cipher.iv`; decrypt still supplies the stored IV. Pending device verification on next build.
+4. **Vault credential save fails with a crypto error.** On build 14, unlocking the vault, adding label `API` / value `secret` and tapping Save produced `Save failed: Caller-provided IV not permitted` with a Retry action; the credential was never stored. Root cause: `VaultCrypto.encrypt` passed a `GCMParameterSpec` into `cipher.init(ENCRYPT_MODE, …)` for per-item Android Keystore keys, which Android Keystore forbids. Status: fixed and verified on build 15 — Save now closes the form and the list shows `1 stored item(s)` / `API` / `Password · updated 2026-11-24`; `View` → `Reveal` decrypts and displays `secret`. Encryption lets the cipher generate the IV and reads it back via `cipher.iv`; decrypt still supplies the stored IV.
 
 ### Low
 
@@ -29,10 +29,14 @@ Scope: walk each implemented flow, record only observed issues, then fix them wi
 
 6. **Shortcut keypad is squeezed when the terminal area is short.** Screenshot requested by user and captured to `C:\Users\Uplift\AppData\Local\Temp\opencode\droidterminal-keypad.png`. Hierarchy confirms row heights collapse instead of scrolling: first two key rows are 144px tall, rows three and four 84px, and the F-key row only 6–12px, with keys clipped before the bottom navigation. Status: fixed and verified — on build 14 the keypad region is a `ScrollView` (`scroll=true`, `[0,1418][1080,1862]`) with each key row a full 144px tall. Swiping inside the keypad scrolled the F-key row (F1–F6) into full view at `[108,1754][122,1838]`; keys no longer squeeze. Final screenshot: `C:\Users\Uplift\AppData\Local\Temp\opencode\droidterminal-keypad-final.png`.
 
+7. **Connections flow walked — no issue found.** On build 15 the empty state offers `Add profile`; the `New connection` form exposes Profile name, Host, Port (default `22`), Username, Group and Authentication, all reachable with the keyboard hidden. Saving `Lab` / `192.0.2.1` / `tester` produced `1 profile(s)` with `tester@192.0.2.1:22`, `Password`, `General` and Edit / Host key / Delete actions. No fix required.
+
 ## Fix plan
 
 1. Close the credential dialog when connect/host-key fetch fails and surface the error in the terminal error state (with Retry). Show progress while fetching.
 2. Remove duplicate passphrase validation presentation.
 3. Make the shortcut keypad scrollable so keys keep full height instead of being squeezed.
 4. Fix Keystore GCM encryption so vault credential save succeeds.
-5. Re-walk Settings; update this file with results.
+5. Re-walk Settings and Connections; update this file with results.
+
+All fix-plan items are complete. Remaining unverified path: connected terminal/SFTP happy path, blocked because `192.168.31.177:22` does not present an SSH host key.
