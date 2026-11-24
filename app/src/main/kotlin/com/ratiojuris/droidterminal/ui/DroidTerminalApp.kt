@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
@@ -94,7 +95,10 @@ fun DroidTerminalApp(container: AppContainer, biometricAuth: BiometricAuth) {
             )
         },
         bottomBar = {
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+            Surface(
+                modifier = Modifier.navigationBarsPadding(),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
