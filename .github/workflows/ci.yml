@@ -67,6 +67,13 @@ jobs:
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
 
+      - name: Upload review APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-review-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 1
+
       - name: Publish test and lint reports
         if: always()
         uses: actions/upload-artifact@v4

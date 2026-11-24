@@ -16,7 +16,7 @@ android {
 
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
     defaultConfig {
-        applicationId = namespace
+        applicationId = "com.ratiojuris.droidterminal.uxreview"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
