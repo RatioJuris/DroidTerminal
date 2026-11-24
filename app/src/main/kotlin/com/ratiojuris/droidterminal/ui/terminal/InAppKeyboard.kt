@@ -378,7 +378,7 @@ private fun RowScope.KeyboardKey(
         delay(400L)
         while (pressed) {
             activateKey(def, resolved, onKey, onModifierTap, onToggleCaps)
-            if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextInserted)
+            if (haptics) feedback.performHapticFeedback(HapticFeedbackType.LongPress)
             delay(55L)
         }
     }
