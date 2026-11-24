@@ -7,17 +7,15 @@
 
 package com.ratiojuris.droidterminal.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -35,44 +33,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.ratiojuris.droidterminal.core.BuildInfo
+import com.ratiojuris.droidterminal.ui.connections.ConnectionsScreen
+import com.ratiojuris.droidterminal.ui.sftp.SftpScreen
+import com.ratiojuris.droidterminal.ui.settings.SettingsScreen
+import com.ratiojuris.droidterminal.ui.terminal.TerminalScreen
+import com.ratiojuris.droidterminal.ui.vault.VaultScreen
 
-/** Top-level destinations. Status text is deliberately explicit about what is not built yet. */
+/** Top-level destinations. Screen content is skeletal by design until Phase 2. */
 enum class Destination(
     val label: String,
-    val plannedPhase: String,
-    val status: String,
     val icon: ImageVector,
 ) {
-    TERMINAL(
-        "Terminal",
-        "Phase 2",
-        "Terminal emulation, scrollback and clipboard integration are not implemented in this foundation build.",
-        Icons.Filled.Home,
-    ),
-    CONNECTIONS(
-        "Connections",
-        "Phase 4",
-        "SSH profiles and host-key verification are not implemented in this foundation build.",
-        Icons.AutoMirrored.Filled.List,
-    ),
-    VAULT(
-        "Vault",
-        "Phase 5",
-        "Keystore-backed credential and SSH key storage is not implemented in this foundation build.",
-        Icons.Filled.Lock,
-    ),
-    SFTP(
-        "SFTP",
-        "Phase 6",
-        "Remote file browsing and transfer management are not implemented in this foundation build.",
-        Icons.AutoMirrored.Filled.List,
-    ),
-    SETTINGS(
-        "Settings",
-        "Phase 7",
-        "Terminal, keypad and security preferences are not implemented in this foundation build.",
-        Icons.Filled.Settings,
-    ),
+    TERMINAL("Terminal", Icons.Filled.Home),
+    CONNECTIONS("Connections", Icons.AutoMirrored.Filled.List),
+    VAULT("Vault", Icons.Filled.Lock),
+    SFTP("SFTP", Icons.AutoMirrored.Filled.List),
+    SETTINGS("Settings", Icons.Filled.Settings),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,9 +56,22 @@ enum class Destination(
 fun DroidTerminalApp() {
     var selected by rememberSaveable { mutableStateOf(Destination.TERMINAL) }
 
+    BackHandler(enabled = selected != Destination.TERMINAL) {
+        selected = Destination.TERMINAL
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(BuildInfo.APP_NAME) })
+            TopAppBar(
+                title = { Text(BuildInfo.APP_NAME) },
+                actions = {
+                    Text(
+                        selected.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                },
+            )
         },
         bottomBar = {
             NavigationBar {
@@ -103,25 +92,13 @@ fun DroidTerminalApp() {
                 .padding(innerPadding),
             color = MaterialTheme.colorScheme.background,
         ) {
-            ModuleStatusScreen(selected)
+            when (selected) {
+                Destination.TERMINAL -> TerminalScreen()
+                Destination.CONNECTIONS -> ConnectionsScreen()
+                Destination.VAULT -> VaultScreen()
+                Destination.SFTP -> SftpScreen()
+                Destination.SETTINGS -> SettingsScreen()
+            }
         }
-    }
-}
-
-@Composable
-private fun ModuleStatusScreen(destination: Destination) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(destination.label, style = MaterialTheme.typography.headlineMedium)
-        Text("Planned milestone: ${destination.plannedPhase}", style = MaterialTheme.typography.titleMedium)
-        Text(destination.status, style = MaterialTheme.typography.bodyLarge)
-        HorizontalDivider()
-        Text("Version ${BuildInfo.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
-        Text(BuildInfo.BUILD_STAGE, style = MaterialTheme.typography.bodyMedium)
-        Text("Licence: ${BuildInfo.SPDX_LICENSE_ID}", style = MaterialTheme.typography.bodyMedium)
     }
 }
