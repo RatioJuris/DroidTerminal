@@ -30,5 +30,10 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(project(":connections"))
+    implementation(project(":keypad"))
+    implementation(project(":ssh-engine"))
+    implementation(project(":terminal-engine"))
     testImplementation(libs.junit)
 }

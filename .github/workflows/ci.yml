@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -79,10 +79,32 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: droidterminal-debug
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
-          if-no-files-found: error
+      - name: Store debug APK in repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        run: |
+          set -euo pipefail
+          mkdir -p builds/debug
+          cp app/build/outputs/apk/debug/*.apk \
+            "builds/debug/droidterminal-debug-${{ github.run_number }}-${{ github.sha }}.apk"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add builds/debug
+          if git diff --cached --quiet; then
+            echo "Build output already present; nothing to commit."
+            exit 0
+          fi
+          git commit -m "store build"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:develop; then
+              echo "Published build to builds/debug"
+              exit 0
+            fi
+            echo "Push rejected; refreshing against develop (attempt $attempt)."
+            git fetch origin develop
+            if ! git rebase origin/develop; then
+              git rebase --abort || true
+              exit 1
+            fi
+          done
+          echo "Unable to publish build after 3 attempts."
+          exit 1

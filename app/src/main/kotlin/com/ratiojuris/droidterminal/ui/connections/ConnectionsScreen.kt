@@ -31,11 +31,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.ratiojuris.droidterminal.connections.ConnectionRepository
+import com.ratiojuris.droidterminal.sshengine.HostKeyInfo
+import com.ratiojuris.droidterminal.sshengine.SshGateway
 import com.ratiojuris.droidterminal.ui.components.ConfirmDialog
 import com.ratiojuris.droidterminal.ui.components.EmptyState
 import com.ratiojuris.droidterminal.ui.components.ErrorState
@@ -45,22 +49,28 @@ import com.ratiojuris.droidterminal.ui.components.SectionHeader
 import com.ratiojuris.droidterminal.ui.model.AuthType
 import com.ratiojuris.droidterminal.ui.model.ConnectionProfile
 import com.ratiojuris.droidterminal.ui.model.ConnectionSort
-import com.ratiojuris.droidterminal.ui.model.MockData
 import com.ratiojuris.droidterminal.ui.model.UiValidation
 import com.ratiojuris.droidterminal.ui.model.filterAndSortConnections
-import kotlinx.coroutines.delay
+import com.ratiojuris.droidterminal.ui.model.toBackend
+import com.ratiojuris.droidterminal.ui.model.toUi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
-fun ConnectionsScreen() {
-    var profiles by remember { mutableStateOf(MockData.connections) }
+fun ConnectionsScreen(repository: ConnectionRepository, gateway: SshGateway) {
+    var profiles by remember { mutableStateOf(emptyList<ConnectionProfile>()) }
     var query by rememberSaveable { mutableStateOf("") }
     var sort by rememberSaveable { mutableStateOf(ConnectionSort.NAME) }
     var showForm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ConnectionProfile?>(null) }
     var pendingDelete by remember { mutableStateOf<ConnectionProfile?>(null) }
     var hostKeyProfile by remember { mutableStateOf<ConnectionProfile?>(null) }
+    var hostKeyInfo by remember { mutableStateOf<HostKeyInfo?>(null) }
+    var hostKeyError by remember { mutableStateOf<String?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     BackHandler(enabled = hostKeyProfile != null || pendingDelete != null || showForm) {
         when {
@@ -70,11 +80,34 @@ fun ConnectionsScreen() {
         }
     }
 
-    LaunchedEffect(isRefreshing) {
-        // TODO(phase2): replace with a real profile repository refresh.
-        if (isRefreshing) {
-            delay(500)
+    fun loadProfiles() {
+        scope.launch {
+            isRefreshing = true
+            runCatching { repository.refresh() }
+                .onSuccess { stored ->
+                    profiles = stored.map { it.toUi() }
+                    notice = null
+                }
+                .onFailure { failure ->
+                    notice = "Profile load failed: ${failure.message ?: failure::class.simpleName}"
+                }
             isRefreshing = false
+        }
+    }
+
+    LaunchedEffect(Unit) { loadProfiles() }
+
+    LaunchedEffect(hostKeyProfile) {
+        val target = hostKeyProfile
+        hostKeyInfo = null
+        hostKeyError = null
+        if (target == null) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            gateway.fetchHostKey(target.host, target.port, target.username)
+        }.onSuccess { info ->
+            hostKeyInfo = info
+        }.onFailure { failure ->
+            hostKeyError = "Host key read failed: ${failure.message ?: failure::class.simpleName}"
         }
     }
 
@@ -113,7 +146,7 @@ fun ConnectionsScreen() {
             }
         }
 
-        TextButton(onClick = { isRefreshing = true }) { Text("Refresh profiles") }
+        TextButton(onClick = { loadProfiles() }) { Text("Refresh profiles") }
         if (isRefreshing) LoadingState("Loading profiles…")
 
         notice?.let {
@@ -153,16 +186,21 @@ fun ConnectionsScreen() {
             initial = editing,
             onDismiss = { showForm = false },
             onSave = { draft ->
-                // TODO(phase2): persist the profile through the connections module.
-                profiles = if (draft.id.isEmpty()) {
-                    profiles + draft.copy(
-                        id = "c${profiles.size + 1}",
-                        lastUsed = System.currentTimeMillis(),
-                    )
-                } else {
-                    profiles.map { if (it.id == draft.id) draft else it }
+                scope.launch {
+                    runCatching { repository.upsert(draft.toBackend()) }
+                        .onSuccess { saved ->
+                            profiles = if (draft.id.isBlank()) {
+                                profiles + saved.toUi()
+                            } else {
+                                profiles.map { if (it.id == saved.id) saved.toUi() else it }
+                            }
+                            showForm = false
+                            notice = null
+                        }
+                        .onFailure { failure ->
+                            notice = "Profile save failed: ${failure.message ?: failure::class.simpleName}"
+                        }
                 }
-                showForm = false
             },
         )
     }
@@ -173,26 +211,39 @@ fun ConnectionsScreen() {
             message = "Remove ${target.name}? This cannot be undone.",
             confirmLabel = "Delete",
             onConfirm = {
-                // TODO(phase2): delete from persistent storage and revoke stored secrets.
-                profiles = profiles.filter { it.id != target.id }
-                pendingDelete = null
+                scope.launch {
+                    runCatching {
+                        repository.delete(target.id)
+                        repository.revokeHost(target.host)
+                    }.onSuccess {
+                        profiles = profiles.filterNot { it.id == target.id }
+                        pendingDelete = null
+                    }.onFailure { failure ->
+                        notice = "Delete failed: ${failure.message ?: failure::class.simpleName}"
+                        pendingDelete = null
+                    }
+                }
             },
             onDismiss = { pendingDelete = null },
         )
     }
 
     hostKeyProfile?.let { target ->
+        val info = hostKeyInfo
         AlertDialog(
             onDismissRequest = { hostKeyProfile = null },
             title = { Text("Verify host key") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("${target.host}:${target.port}")
-                    // TODO(phase2): obtain the live fingerprint from ssh-engine and enforce policy.
-                    Text(
-                        "SHA256:mockfingerprintvalue0123456789abcdef",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    when {
+                        info != null -> {
+                            Text(info.algorithm, style = MaterialTheme.typography.bodySmall)
+                            Text(info.fingerprint, style = MaterialTheme.typography.bodySmall)
+                        }
+                        hostKeyError != null -> ErrorState(hostKeyError!!)
+                        else -> LoadingState("Reading host key…")
+                    }
                     Text(
                         "Accepting an unknown key is blocked until it is verified out of band.",
                         style = MaterialTheme.typography.bodySmall,
@@ -200,9 +251,19 @@ fun ConnectionsScreen() {
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    notice = "Host key accepted for ${target.host} (mock)"
-                    hostKeyProfile = null
+                Button(enabled = info != null, onClick = {
+                    if (info != null) {
+                        scope.launch {
+                            runCatching {
+                                repository.trustHost(target.host, info.fingerprint, info.algorithm)
+                            }.onSuccess {
+                                notice = "Host key accepted for ${target.host}"
+                                hostKeyProfile = null
+                            }.onFailure { failure ->
+                                hostKeyError = "Accept failed: ${failure.message ?: failure::class.simpleName}"
+                            }
+                        }
+                    }
                 }) { Text("Accept") }
             },
             dismissButton = { TextButton(onClick = { hostKeyProfile = null }) { Text("Reject") } },

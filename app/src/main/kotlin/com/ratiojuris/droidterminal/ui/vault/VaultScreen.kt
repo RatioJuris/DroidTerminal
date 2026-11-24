@@ -26,40 +26,69 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.ratiojuris.droidterminal.auth.BiometricAuth
+import com.ratiojuris.droidterminal.auth.VaultAutoLock
+import com.ratiojuris.droidterminal.settings.AppSettings
+import com.ratiojuris.droidterminal.settings.SettingsRepository
 import com.ratiojuris.droidterminal.ui.components.ConfirmDialog
 import com.ratiojuris.droidterminal.ui.components.EmptyState
 import com.ratiojuris.droidterminal.ui.components.ErrorState
 import com.ratiojuris.droidterminal.ui.components.FormTextField
 import com.ratiojuris.droidterminal.ui.components.SectionHeader
-import com.ratiojuris.droidterminal.ui.model.MockData
 import com.ratiojuris.droidterminal.ui.model.UiValidation
 import com.ratiojuris.droidterminal.ui.model.VaultItem
 import com.ratiojuris.droidterminal.ui.model.VaultItemKind
+import com.ratiojuris.droidterminal.ui.model.toBackend
+import com.ratiojuris.droidterminal.ui.model.toUi
+import com.ratiojuris.droidterminal.vault.VaultRepository
+import kotlinx.coroutines.launch
 
 @Composable
-fun VaultScreen() {
-    var unlocked by remember { mutableStateOf(false) }
+fun VaultScreen(
+    vault: VaultRepository,
+    autoLock: VaultAutoLock,
+    biometric: BiometricAuth,
+    settings: SettingsRepository,
+) {
+    val unlocked by vault.isUnlocked.collectAsState()
+    val storedItems by vault.items.collectAsState()
+    val settingsState by settings.settings.collectAsState(AppSettings())
+    val items = storedItems.map { it.toUi() }
+    val scope = rememberCoroutineScope()
+
     var passphrase by rememberSaveable { mutableStateOf("") }
     var passphraseError by remember { mutableStateOf<String?>(null) }
-    var items by remember { mutableStateOf(MockData.vaultItems) }
     var showAddForm by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<VaultItem?>(null) }
+    var revealedSecret by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<VaultItem?>(null) }
-    var requireBiometric by rememberSaveable { mutableStateOf(false) }
-    var autoLock by rememberSaveable { mutableStateOf(true) }
+    var requireBiometric by remember { mutableStateOf(settingsState.requireBiometric) }
+    var autoLockEnabled by remember { mutableStateOf(settingsState.autoLockVault) }
     var notice by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(settingsState) {
+        requireBiometric = settingsState.requireBiometric
+        autoLockEnabled = settingsState.autoLockVault
+        autoLock.enabled = settingsState.autoLockVault
+    }
 
     BackHandler(enabled = detail != null || pendingDelete != null || showAddForm) {
         when {
-            detail != null -> detail = null
+            detail != null -> {
+                detail = null
+                revealedSecret = null
+            }
             pendingDelete != null -> pendingDelete = null
             else -> showAddForm = false
         }
@@ -94,9 +123,16 @@ fun VaultScreen() {
                     Button(onClick = {
                         passphraseError = UiValidation.validatePassphrase(passphrase)
                         if (passphraseError == null) {
-                            // TODO(phase2): unlock the Android Keystore-backed vault.
-                            unlocked = true
-                            passphrase = ""
+                            scope.launch {
+                                vault.unlock(passphrase)
+                                    .onSuccess {
+                                        passphrase = ""
+                                        notice = null
+                                    }
+                                    .onFailure { failure ->
+                                        passphraseError = failure.message ?: "Vault unlock failed"
+                                    }
+                            }
                         }
                     }) { Text("Unlock") }
                 }
@@ -106,8 +142,9 @@ fun VaultScreen() {
                 Text("Vault unlocked", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = {
-                    // TODO(phase2): wipe in-memory plaintext on lock.
-                    unlocked = false
+                    vault.lock()
+                    detail = null
+                    revealedSecret = null
                 }) { Text("Lock") }
             }
 
@@ -129,20 +166,30 @@ fun VaultScreen() {
                 items.forEach { item ->
                     VaultItemCard(
                         item = item,
-                        onOpen = { detail = item },
+                        onOpen = {
+                            detail = item
+                            revealedSecret = null
+                        },
                         onDelete = { pendingDelete = item },
                     )
                 }
             }
 
             SectionHeader("Vault options")
-            SettingToggle("Require biometric unlock", requireBiometric) {
-                // TODO(phase2): wire androidx.biometric prompt and keystore-gated access.
-                requireBiometric = it
+            SettingToggle("Require biometric unlock", requireBiometric) { enabled ->
+                requireBiometric = enabled
+                scope.launch {
+                    runCatching { settings.save(settingsState.copy(requireBiometric = enabled)) }
+                        .onFailure { notice = "Setting save failed: ${it.message ?: it::class.simpleName}" }
+                }
             }
-            SettingToggle("Auto-lock after 5 minutes", autoLock) {
-                // TODO(phase2): bind to lifecycle background timer.
-                autoLock = it
+            SettingToggle("Auto-lock after 5 minutes", autoLockEnabled) { enabled ->
+                autoLockEnabled = enabled
+                autoLock.enabled = enabled
+                scope.launch {
+                    runCatching { settings.save(settingsState.copy(autoLockVault = enabled)) }
+                        .onFailure { notice = "Setting save failed: ${it.message ?: it::class.simpleName}" }
+                }
             }
         }
     }
@@ -150,28 +197,69 @@ fun VaultScreen() {
     if (showAddForm) {
         VaultItemForm(
             onDismiss = { showAddForm = false },
-            onSave = { item ->
-                // TODO(phase2): encrypt and persist through the vault module.
-                items = items + item.copy(id = "v${items.size + 1}")
-                showAddForm = false
-                notice = null
+            onSave = { label, kind, secret ->
+                scope.launch {
+                    vault.add(label, kind.toBackend(), secret)
+                        .onSuccess {
+                            showAddForm = false
+                            notice = null
+                        }
+                        .onFailure { failure ->
+                            notice = "Save failed: ${failure.message ?: failure::class.simpleName}"
+                        }
+                }
             },
         )
     }
 
     detail?.let { item ->
         AlertDialog(
-            onDismissRequest = { detail = null },
+            onDismissRequest = {
+                detail = null
+                revealedSecret = null
+            },
             title = { Text(item.label) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Kind: ${item.kind.label}")
                     Text("Updated: ${item.updated}")
-                    // TODO(phase2): reveal only after explicit, authenticated user action.
-                    Text(item.secret, style = MaterialTheme.typography.bodySmall)
+                    revealedSecret?.let { secret ->
+                        Text(secret, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             },
-            confirmButton = { TextButton(onClick = { detail = null }) { Text("Close") } },
+            confirmButton = {
+                if (revealedSecret == null) {
+                    Button(onClick = {
+                        fun reveal() {
+                            vault.reveal(item.id)
+                                .onSuccess { revealedSecret = it }
+                                .onFailure { failure ->
+                                    notice = "Reveal failed: ${failure.message ?: failure::class.simpleName}"
+                                }
+                        }
+                        if (requireBiometric) {
+                            biometric.authenticate(
+                                title = "Reveal credential",
+                                onSuccess = { reveal() },
+                                onError = { error -> notice = error },
+                            )
+                        } else {
+                            reveal()
+                        }
+                    }) { Text("Reveal") }
+                } else {
+                    TextButton(onClick = {
+                        detail = null
+                        revealedSecret = null
+                    }) { Text("Close") }
+                }
+            },
+            dismissButton = {
+                if (revealedSecret == null) {
+                    TextButton(onClick = { detail = null }) { Text("Cancel") }
+                }
+            },
         )
     }
 
@@ -181,9 +269,18 @@ fun VaultScreen() {
             message = "Remove ${target.label} from the vault?",
             confirmLabel = "Delete",
             onConfirm = {
-                // TODO(phase2): delete ciphertext and purge the key from the Keystore.
-                items = items.filter { it.id != target.id }
-                pendingDelete = null
+                scope.launch {
+                    vault.delete(target.id)
+                        .onSuccess {
+                            pendingDelete = null
+                            detail = null
+                            revealedSecret = null
+                        }
+                        .onFailure { failure ->
+                            notice = "Delete failed: ${failure.message ?: failure::class.simpleName}"
+                            pendingDelete = null
+                        }
+                }
             },
             onDismiss = { pendingDelete = null },
         )
@@ -214,7 +311,10 @@ private fun VaultItemCard(item: VaultItem, onOpen: () -> Unit, onDelete: () -> U
 }
 
 @Composable
-private fun VaultItemForm(onDismiss: () -> Unit, onSave: (VaultItem) -> Unit) {
+private fun VaultItemForm(
+    onDismiss: () -> Unit,
+    onSave: (String, VaultItemKind, String) -> Unit,
+) {
     var label by rememberSaveable { mutableStateOf("") }
     var secret by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(VaultItemKind.PASSWORD) }
@@ -244,15 +344,7 @@ private fun VaultItemForm(onDismiss: () -> Unit, onSave: (VaultItem) -> Unit) {
             Button(onClick = {
                 attempted = true
                 if (errors.isEmpty()) {
-                    onSave(
-                        VaultItem(
-                            id = "",
-                            label = label.trim(),
-                            kind = kind,
-                            updated = "2026-11-24",
-                            secret = secret,
-                        ),
-                    )
+                    onSave(label.trim(), kind, secret)
                 }
             }) { Text("Save") }
         },

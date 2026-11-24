@@ -25,29 +25,60 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ratiojuris.droidterminal.core.BuildInfo
+import com.ratiojuris.droidterminal.settings.AppSettings
+import com.ratiojuris.droidterminal.settings.SettingsRepository
 import com.ratiojuris.droidterminal.ui.components.SectionHeader
+import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen() {
-    var fontSize by rememberSaveable { mutableFloatStateOf(14f) }
-    var scrollback by rememberSaveable { mutableIntStateOf(1000) }
-    var showKeypad by rememberSaveable { mutableStateOf(true) }
-    var haptics by rememberSaveable { mutableStateOf(true) }
-    var longPressModifier by rememberSaveable { mutableStateOf(false) }
-    var autoLock by rememberSaveable { mutableStateOf(true) }
-    var biometric by rememberSaveable { mutableStateOf(false) }
-    var hostKeyPolicy by rememberSaveable { mutableIntStateOf(0) }
+fun SettingsScreen(repository: SettingsRepository) {
+    val persisted by repository.settings.collectAsState(AppSettings())
+    val scope = rememberCoroutineScope()
+
+    var fontSize by rememberSaveable { mutableFloatStateOf(persisted.fontSize) }
+    var scrollback by rememberSaveable { mutableIntStateOf(persisted.scrollback) }
+    var showKeypad by rememberSaveable { mutableStateOf(persisted.showKeypad) }
+    var haptics by rememberSaveable { mutableStateOf(persisted.haptics) }
+    var longPressModifier by rememberSaveable { mutableStateOf(persisted.longPressModifier) }
+    var autoLock by rememberSaveable { mutableStateOf(persisted.autoLockVault) }
+    var biometric by rememberSaveable { mutableStateOf(persisted.requireBiometric) }
+    var hostKeyPolicy by rememberSaveable { mutableIntStateOf(persisted.hostKeyPolicy) }
     var notice by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(persisted) {
+        fontSize = persisted.fontSize
+        scrollback = persisted.scrollback
+        showKeypad = persisted.showKeypad
+        haptics = persisted.haptics
+        longPressModifier = persisted.longPressModifier
+        autoLock = persisted.autoLockVault
+        biometric = persisted.requireBiometric
+        hostKeyPolicy = persisted.hostKeyPolicy
+    }
+
+    fun draft(): AppSettings = AppSettings(
+        fontSize = fontSize,
+        scrollback = scrollback,
+        showKeypad = showKeypad,
+        haptics = haptics,
+        longPressModifier = longPressModifier,
+        autoLockVault = autoLock,
+        requireBiometric = biometric,
+        hostKeyPolicy = hostKeyPolicy,
+    )
 
     Column(
         modifier = Modifier
@@ -60,11 +91,14 @@ fun SettingsScreen() {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Font size: ${fontSize.toInt()} sp", style = MaterialTheme.typography.bodyMedium)
-                // TODO(phase2): persist terminal appearance preferences.
-                Slider(value = fontSize, onValueChange = { fontSize = it }, valueRange = 10f..24f)
+                Slider(
+                    value = fontSize,
+                    onValueChange = { fontSize = it },
+                    valueRange = AppSettings.MIN_FONT_SIZE..AppSettings.MAX_FONT_SIZE,
+                )
                 Text("Scrollback lines: $scrollback", style = MaterialTheme.typography.bodyMedium)
                 Row {
-                    listOf(200, 1000, 5000).forEach { value ->
+                    AppSettings.SUPPORTED_SCROLLBACK.forEach { value ->
                         FilterChip(
                             selected = scrollback == value,
                             onClick = { scrollback = value },
@@ -105,20 +139,30 @@ fun SettingsScreen() {
         SectionHeader("Actions")
         Row {
             Button(onClick = {
-                // TODO(phase2): write preferences to DataStore.
-                notice = "Preferences saved (in memory for Phase 1)"
+                scope.launch {
+                    runCatching { repository.save(draft()) }
+                        .onSuccess { notice = "Preferences saved" }
+                        .onFailure { notice = "Save failed: ${it.message ?: it::class.simpleName}" }
+                }
             }) { Text("Save") }
             Spacer(Modifier.width(8.dp))
             TextButton(onClick = {
-                fontSize = 14f
-                scrollback = 1000
-                showKeypad = true
-                haptics = true
-                longPressModifier = false
-                autoLock = true
-                biometric = false
-                hostKeyPolicy = 0
-                notice = "Defaults restored"
+                scope.launch {
+                    runCatching { repository.reset() }
+                        .onSuccess {
+                            val defaults = AppSettings()
+                            fontSize = defaults.fontSize
+                            scrollback = defaults.scrollback
+                            showKeypad = defaults.showKeypad
+                            haptics = defaults.haptics
+                            longPressModifier = defaults.longPressModifier
+                            autoLock = defaults.autoLockVault
+                            biometric = defaults.requireBiometric
+                            hostKeyPolicy = defaults.hostKeyPolicy
+                            notice = "Defaults restored"
+                        }
+                        .onFailure { notice = "Reset failed: ${it.message ?: it::class.simpleName}" }
+                }
             }) { Text("Reset") }
         }
         if (notice.isNotEmpty()) Text(notice, style = MaterialTheme.typography.bodySmall)

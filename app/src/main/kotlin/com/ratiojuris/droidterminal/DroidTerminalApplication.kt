@@ -8,6 +8,15 @@
 package com.ratiojuris.droidterminal
 
 import android.app.Application
+import com.ratiojuris.droidterminal.di.AppContainer
 
-/** Application entry point reserved for future dependency graph initialisation. */
-class DroidTerminalApplication : Application()
+/** Application entry point and owner of the process-scoped dependency graph. */
+class DroidTerminalApplication : Application() {
+    lateinit var container: AppContainer
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        container = AppContainer(this)
+    }
+}

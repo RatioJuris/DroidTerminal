@@ -25,6 +25,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,14 +34,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.ratiojuris.droidterminal.auth.BiometricAuth
 import com.ratiojuris.droidterminal.core.BuildInfo
+import com.ratiojuris.droidterminal.di.AppContainer
+import com.ratiojuris.droidterminal.settings.AppSettings
 import com.ratiojuris.droidterminal.ui.connections.ConnectionsScreen
 import com.ratiojuris.droidterminal.ui.sftp.SftpScreen
 import com.ratiojuris.droidterminal.ui.settings.SettingsScreen
 import com.ratiojuris.droidterminal.ui.terminal.TerminalScreen
 import com.ratiojuris.droidterminal.ui.vault.VaultScreen
 
-/** Top-level destinations. Screen content is skeletal by design until Phase 2. */
+/** Top-level destinations. Screen content is backed by the application graph. */
 enum class Destination(
     val label: String,
     val icon: ImageVector,
@@ -53,8 +58,19 @@ enum class Destination(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DroidTerminalApp() {
+fun DroidTerminalApp(container: AppContainer, biometricAuth: BiometricAuth) {
     var selected by rememberSaveable { mutableStateOf(Destination.TERMINAL) }
+    val settings by container.settings.settings.collectAsState(AppSettings())
+
+    LaunchedEffect(settings.autoLockVault) {
+        container.vaultAutoLock.enabled = settings.autoLockVault
+    }
+
+    LaunchedEffect(container.sessions, container.sftp) {
+        container.sessions.activeTarget.collect { target ->
+            container.sftp.setTarget(target)
+        }
+    }
 
     BackHandler(enabled = selected != Destination.TERMINAL) {
         selected = Destination.TERMINAL
@@ -93,11 +109,27 @@ fun DroidTerminalApp() {
             color = MaterialTheme.colorScheme.background,
         ) {
             when (selected) {
-                Destination.TERMINAL -> TerminalScreen()
-                Destination.CONNECTIONS -> ConnectionsScreen()
-                Destination.VAULT -> VaultScreen()
-                Destination.SFTP -> SftpScreen()
-                Destination.SETTINGS -> SettingsScreen()
+                Destination.TERMINAL -> TerminalScreen(
+                    connections = container.connections,
+                    sessions = container.sessions,
+                    gateway = container.sshGateway,
+                    settings = container.settings,
+                )
+                Destination.CONNECTIONS -> ConnectionsScreen(
+                    repository = container.connections,
+                    gateway = container.sshGateway,
+                )
+                Destination.VAULT -> VaultScreen(
+                    vault = container.vault,
+                    autoLock = container.vaultAutoLock,
+                    biometric = biometricAuth,
+                    settings = container.settings,
+                )
+                Destination.SFTP -> SftpScreen(
+                    sftp = container.sftp,
+                    sessions = container.sessions,
+                )
+                Destination.SETTINGS -> SettingsScreen(repository = container.settings)
             }
         }
     }

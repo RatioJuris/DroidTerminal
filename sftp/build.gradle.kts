@@ -30,5 +30,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.jsch)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(project(":ssh-engine"))
     testImplementation(libs.junit)
 }

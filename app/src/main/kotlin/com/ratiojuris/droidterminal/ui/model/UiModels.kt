@@ -7,7 +7,16 @@
 
 package com.ratiojuris.droidterminal.ui.model
 
-/** UI-level models for the Phase 1 screens. Backing services arrive in Phase 2. */
+import com.ratiojuris.droidterminal.connections.AuthType as BackendAuthType
+import com.ratiojuris.droidterminal.connections.ConnectionProfile as BackendConnectionProfile
+import com.ratiojuris.droidterminal.sftp.RemoteEntry as BackendRemoteEntry
+import com.ratiojuris.droidterminal.sftp.TransferProgress as BackendTransferProgress
+import com.ratiojuris.droidterminal.sessions.SessionTabInfo as BackendSessionTabInfo
+import com.ratiojuris.droidterminal.terminalengine.TerminalSnapshot
+import com.ratiojuris.droidterminal.vault.VaultItem as BackendVaultItem
+import com.ratiojuris.droidterminal.vault.VaultItemKind as BackendVaultItemKind
+
+/** UI-level models and adapters over the Phase 2 backend modules. */
 
 enum class AuthType(val label: String) {
     PASSWORD("Password"),
@@ -40,7 +49,7 @@ data class VaultItem(
     val label: String,
     val kind: VaultItemKind,
     val updated: String,
-    val secret: String,
+    val secret: String = "",
 )
 
 data class RemoteFile(
@@ -81,53 +90,84 @@ enum class TerminalLineKind { OUTPUT, COMMAND, ERROR, SUCCESS, PROMPT }
 
 data class TerminalLine(val text: String, val kind: TerminalLineKind)
 
-/** Sample content for the Phase 1 screens. Every consumer is marked with TODO(phase2). */
-// TODO(phase2): replace MockData with repositories from connections, vault, sftp and sessions.
-object MockData {
-    val connections = listOf(
-        ConnectionProfile("c1", "Production web", "web.example.net", 22, "deploy", AuthType.SSH_KEY, "Servers", 50),
-        ConnectionProfile("c2", "Staging database", "db.staging.example.net", 2222, "ops", AuthType.PASSWORD, "Servers", 40),
-        ConnectionProfile("c3", "Raspberry Pi", "192.168.1.42", 22, "pi", AuthType.PASSWORD, "Home", 30),
-        ConnectionProfile("c4", "Jump host", "bastion.example.net", 22, "admin", AuthType.AGENT, "Servers", 20),
-    )
+fun BackendConnectionProfile.toUi(): ConnectionProfile = ConnectionProfile(
+    id = id,
+    name = name,
+    host = host,
+    port = port,
+    username = username,
+    authType = AuthType.valueOf(authType.name),
+    group = group,
+    lastUsed = lastUsed,
+)
 
-    val vaultItems = listOf(
-        VaultItem("v1", "Production web key", VaultItemKind.SSH_KEY, "2026-11-20", "-----BEGIN OPENSSH PRIVATE KEY-----"),
-        VaultItem("v2", "Staging database", VaultItemKind.PASSWORD, "2026-11-18", "k7f2!example"),
-        VaultItem("v3", "Router admin", VaultItemKind.PASSWORD, "2026-11-02", "admin-pass"),
-        VaultItem("v4", "Code signing", VaultItemKind.CERTIFICATE, "2026-10-27", "PKCS#12 certificate"),
-        VaultItem("v5", "Recovery codes", VaultItemKind.NOTE, "2026-10-11", "8 single-use codes"),
-    )
+fun ConnectionProfile.toBackend(): BackendConnectionProfile = BackendConnectionProfile(
+    id = id,
+    name = name,
+    host = host,
+    port = port,
+    username = username,
+    authType = BackendAuthType.valueOf(authType.name),
+    group = group,
+    lastUsed = lastUsed,
+)
 
-    val directory = listOf(
-        RemoteFile("bin", "/home/deploy/bin", true, "-", "drwxr-xr-x", "2026-11-20 09:12"),
-        RemoteFile("logs", "/home/deploy/logs", true, "-", "drwxr-xr-x", "2026-11-22 14:03"),
-        RemoteFile("app.jar", "/home/deploy/app.jar", false, "24.8 MB", "-rw-r--r--", "2026-11-22 11:47"),
-        RemoteFile("deploy.sh", "/home/deploy/deploy.sh", false, "2.1 KB", "-rwxr-xr-x", "2026-11-19 16:30"),
-        RemoteFile("README.md", "/home/deploy/README.md", false, "812 B", "-rw-r--r--", "2026-11-01 08:15"),
-    )
+fun BackendVaultItem.toUi(): VaultItem = VaultItem(
+    id = id,
+    label = label,
+    kind = VaultItemKind.valueOf(kind.name),
+    updated = updated,
+)
 
-    val transfers = listOf(
-        TransferItem("t1", "app.jar", TransferDirection.UPLOAD, 0.72f, TransferStatus.ACTIVE),
-        TransferItem("t2", "access-2026-11-23.log", TransferDirection.DOWNLOAD, 1f, TransferStatus.DONE),
-        TransferItem("t3", "backup.tar.gz", TransferDirection.DOWNLOAD, 0.35f, TransferStatus.FAILED),
-    )
+fun VaultItemKind.toBackend(): BackendVaultItemKind = BackendVaultItemKind.valueOf(name)
 
-    val sessions = listOf(
-        SessionTab("s1", "Production web", "web.example.net", true),
-        SessionTab("s2", "Raspberry Pi", "192.168.1.42", true),
-    )
+fun BackendRemoteEntry.toUi(): RemoteFile = RemoteFile(
+    name = name,
+    path = path,
+    isDirectory = isDirectory,
+    size = if (isDirectory) "-" else formatSize(sizeBytes),
+    permissions = permissions,
+    modified = modified,
+)
 
-    val terminalLines = listOf(
-        TerminalLine("Last login: Mon Nov 23 09:14:02 2026 from 10.0.0.8", TerminalLineKind.OUTPUT),
-        TerminalLine("deploy@web:~$ uptime", TerminalLineKind.COMMAND),
-        TerminalLine(" 09:14:03 up 42 days,  6:12,  2 users,  load average: 0.08, 0.12, 0.09", TerminalLineKind.OUTPUT),
-        TerminalLine("deploy@web:~$ systemctl status app", TerminalLineKind.COMMAND),
-        TerminalLine("● app.service - Application server", TerminalLineKind.SUCCESS),
-        TerminalLine("   Loaded: loaded (/etc/systemd/system/app.service; enabled)", TerminalLineKind.OUTPUT),
-        TerminalLine("   Active: active (running) since Mon 2026-11-23 09:00:01 UTC; 14min ago", TerminalLineKind.SUCCESS),
-        TerminalLine("deploy@web:~$", TerminalLineKind.PROMPT),
-    )
+fun RemoteFile.toBackend(): BackendRemoteEntry = BackendRemoteEntry(
+    name = name,
+    path = path,
+    isDirectory = isDirectory,
+    sizeBytes = size.toBytesOrZero(),
+    permissions = permissions,
+    modified = modified,
+)
+
+fun BackendTransferProgress.toUi(): TransferItem = TransferItem(
+    id = id,
+    name = name,
+    direction = TransferDirection.DOWNLOAD,
+    progress = fraction,
+    status = TransferStatus.valueOf(state.name),
+)
+
+fun BackendSessionTabInfo.toUi(): SessionTab = SessionTab(
+    id = id,
+    title = title,
+    host = host,
+    connected = connected,
+)
+
+fun TerminalSnapshot.toUiLines(): List<TerminalLine> =
+    renderHistoryText().lines().map { TerminalLine(it, TerminalLineKind.OUTPUT) }
+
+private fun formatSize(bytes: Long): String = when {
+    bytes >= 1024L * 1024L -> "${bytes / (1024L * 1024L)} MB"
+    bytes >= 1024L -> "${bytes / 1024L} KB"
+    else -> "$bytes B"
+}
+
+private fun String.toBytesOrZero(): Long = when {
+    endsWith(" MB") -> removeSuffix(" MB").toLongOrNull()?.times(1024L * 1024L) ?: 0L
+    endsWith(" KB") -> removeSuffix(" KB").toLongOrNull()?.times(1024L) ?: 0L
+    endsWith(" B") -> removeSuffix(" B").toLongOrNull() ?: 0L
+    else -> toLongOrNull() ?: 0L
 }
 
 /** Basic validation used by the Phase 1 forms. */

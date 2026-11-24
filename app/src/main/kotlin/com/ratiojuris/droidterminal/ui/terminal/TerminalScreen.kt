@@ -8,7 +8,6 @@
 package com.ratiojuris.droidterminal.ui.terminal
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -32,73 +33,196 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ratiojuris.droidterminal.connections.ConnectionRepository
+import com.ratiojuris.droidterminal.keypad.ArrowDirection
+import com.ratiojuris.droidterminal.keypad.KeySequences
+import com.ratiojuris.droidterminal.keypad.Modifier as KeypadModifier
+import com.ratiojuris.droidterminal.keypad.ModifierState
+import com.ratiojuris.droidterminal.keypad.TerminalKey
+import com.ratiojuris.droidterminal.sessions.SessionManager
+import com.ratiojuris.droidterminal.sessions.SessionState
+import com.ratiojuris.droidterminal.settings.AppSettings
+import com.ratiojuris.droidterminal.settings.SettingsRepository
+import com.ratiojuris.droidterminal.sshengine.HostKeyInfo
+import com.ratiojuris.droidterminal.sshengine.SshCredential
+import com.ratiojuris.droidterminal.sshengine.SshGateway
+import com.ratiojuris.droidterminal.terminalengine.TerminalSize
 import com.ratiojuris.droidterminal.ui.components.ErrorState
+import com.ratiojuris.droidterminal.ui.components.FormTextField
 import com.ratiojuris.droidterminal.ui.components.KeyCap
 import com.ratiojuris.droidterminal.ui.components.LoadingState
 import com.ratiojuris.droidterminal.ui.components.SectionHeader
-import com.ratiojuris.droidterminal.ui.model.MockData
+import com.ratiojuris.droidterminal.ui.model.AuthType
+import com.ratiojuris.droidterminal.ui.model.ConnectionProfile
 import com.ratiojuris.droidterminal.ui.model.SessionTab
 import com.ratiojuris.droidterminal.ui.model.TerminalLine
 import com.ratiojuris.droidterminal.ui.model.TerminalLineKind
-import kotlinx.coroutines.delay
+import com.ratiojuris.droidterminal.ui.model.toUi
+import com.ratiojuris.droidterminal.ui.model.toUiLines
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private sealed interface ConnectStep {
+    data class Credentials(val profile: ConnectionProfile) : ConnectStep
+    data class HostKey(
+        val profile: ConnectionProfile,
+        val credential: SshCredential,
+        val info: HostKeyInfo,
+    ) : ConnectStep
+}
 
 @Composable
-fun TerminalScreen() {
-    var sessions by remember { mutableStateOf(MockData.sessions) }
-    var selectedId by rememberSaveable { mutableStateOf(MockData.sessions.first().id) }
-    var lines by remember { mutableStateOf(MockData.terminalLines) }
-    var input by rememberSaveable { mutableStateOf("") }
-    var showKeypad by rememberSaveable { mutableStateOf(true) }
-    var isConnecting by remember { mutableStateOf(false) }
-    var inputError by remember { mutableStateOf<String?>(null) }
+fun TerminalScreen(
+    connections: ConnectionRepository,
+    sessions: SessionManager,
+    gateway: SshGateway,
+    settings: SettingsRepository,
+) {
+    val tabs by sessions.tabs.collectAsState()
+    val snapshots by sessions.snapshots.collectAsState()
+    val activeId by sessions.activeId.collectAsState()
+    val status by sessions.status.collectAsState()
+    val appSettings by settings.settings.collectAsState(AppSettings())
+    val storedProfiles by connections.profiles.collectAsState(emptyList())
+    val scope = rememberCoroutineScope()
+    val hapticFeedback = LocalHapticFeedback.current
 
-    val selected = sessions.firstOrNull { it.id == selectedId } ?: sessions.firstOrNull()
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var input by rememberSaveable { mutableStateOf("") }
+    var inputError by remember { mutableStateOf<String?>(null) }
+    var showKeypad by remember { mutableStateOf(appSettings.showKeypad) }
+    var connectStep by remember { mutableStateOf<ConnectStep?>(null) }
+    var connectError by remember { mutableStateOf<String?>(null) }
+    var showProfilePicker by remember { mutableStateOf(false) }
+    var modifiers by remember { mutableStateOf(ModifierState()) }
     val scrollState = rememberScrollState()
 
-    BackHandler(enabled = showKeypad) { showKeypad = false }
+    val profiles = storedProfiles.map { it.toUi() }
+    val selected = tabs.firstOrNull { it.id == selectedId } ?: tabs.firstOrNull()
+    val snapshot = selected?.let { snapshots[it.id] }
+    val lines = snapshot?.toUiLines().orEmpty()
+    val cursorRow = (snapshot?.scrollback?.size ?: 0) + (snapshot?.cursor?.row ?: 0)
+    val cursorColumn = snapshot?.cursor?.column ?: 0
 
-    LaunchedEffect(isConnecting) {
-        // TODO(phase2): replace the timed transition with real SSH connection state.
-        if (isConnecting) {
-            delay(700)
-            isConnecting = false
-        }
-    }
-
-    LaunchedEffect(lines.size) {
-        // TODO(phase2): follow the live terminal engine cursor instead of line count.
+    LaunchedEffect(appSettings.scrollback) { sessions.configure(appSettings.scrollback) }
+    LaunchedEffect(appSettings.showKeypad) { showKeypad = appSettings.showKeypad }
+    LaunchedEffect(activeId) { activeId?.let { selectedId = it } }
+    LaunchedEffect(cursorRow, cursorColumn) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
+    BackHandler(enabled = showKeypad || connectStep != null || showProfilePicker) {
+        when {
+            connectStep != null -> connectStep = null
+            showProfilePicker -> showProfilePicker = false
+            else -> showKeypad = false
+        }
+    }
+
+    fun requestConnect(profile: ConnectionProfile) {
+        if (profile.authType == AuthType.AGENT) {
+            connectError = "Agent authentication is not implemented"
+            return
+        }
+        sessions.clearStatus()
+        connectError = null
+        connectStep = ConnectStep.Credentials(profile)
+    }
+
+    suspend fun completeConnect(profile: ConnectionProfile, credential: SshCredential, fingerprint: String) {
+        val result = sessions.connect(profile, credential, fingerprint, TerminalSize.DEFAULT)
+        if (result.isSuccess) {
+            selectedId = result.getOrThrow()
+            runCatching { connections.touch(profile.id) }
+            connectStep = null
+            connectError = null
+        } else {
+            connectError = "Connection failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+        }
+    }
+
+    suspend fun resolveHostKey(profile: ConnectionProfile, credential: SshCredential) {
+        val trusted = connections.trustedFingerprint(profile.host)
+        if (trusted != null) {
+            completeConnect(profile, credential, trusted)
+            return
+        }
+        when (appSettings.hostKeyPolicy) {
+            AppSettings.HOST_KEY_STRICT -> {
+                connectError = "Host key for ${profile.host} is not trusted"
+            }
+            else -> {
+                val fetched = withContext(Dispatchers.IO) {
+                    gateway.fetchHostKey(profile.host, profile.port, profile.username)
+                }
+                if (fetched.isFailure) {
+                    connectError = "Host key read failed: ${fetched.exceptionOrNull()?.message ?: "unknown error"}"
+                    return
+                }
+                val info = fetched.getOrThrow()
+                if (appSettings.hostKeyPolicy == AppSettings.HOST_KEY_TOFU) {
+                    val accepted = runCatching {
+                        connections.trustHost(info.host, info.fingerprint, info.algorithm)
+                    }
+                    if (accepted.isFailure) {
+                        connectError = "Host key acceptance failed: ${accepted.exceptionOrNull()?.message}"
+                    } else {
+                        completeConnect(profile, credential, info.fingerprint)
+                    }
+                } else {
+                    connectStep = ConnectStep.HostKey(profile, credential, info)
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        SessionTabs(sessions, selectedId) { id ->
+        SessionTabs(tabs.map { it.toUi() }, selected?.id) { id ->
             selectedId = id
+            sessions.select(id)
             inputError = null
         }
 
         selected?.let { session ->
-            ConnectionBar(
-                session = session,
-                onToggle = {
-                    // TODO(phase2): open/close a real SSH session for this profile.
-                    sessions = sessions.map { tab ->
-                        if (tab.id == session.id) tab.copy(connected = !tab.connected) else tab
+            ConnectionBar(session.toUi(), onToggle = {
+                if (session.connected) {
+                    sessions.disconnect(session.id)
+                } else {
+                    val profile = profiles.firstOrNull {
+                        it.name == session.title && it.host == session.host
                     }
-                    if (!session.connected) isConnecting = true
-                },
-            )
-        } ?: EmptySessionBanner()
+                    if (profile != null) requestConnect(profile) else {
+                        connectError = "Connection profile is no longer available"
+                    }
+                }
+            })
+        } ?: EmptySessionBanner(onConnect = { showProfilePicker = true })
 
-        if (isConnecting) LoadingState("Connecting…")
+        val errorMessage = connectError ?: status
+        errorMessage?.let {
+            ErrorState(it, onRetry = {
+                sessions.clearStatus()
+                connectError = null
+            })
+        }
+
+        if (connectStep != null || selected?.state == SessionState.CONNECTING) {
+            LoadingState("Connecting…")
+        }
 
         Surface(
             modifier = Modifier
@@ -108,13 +232,17 @@ fun TerminalScreen() {
             color = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.small,
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(12.dp),
-            ) {
-                lines.forEach { line -> TerminalOutputLine(line) }
+            SelectionContainer {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                        .padding(12.dp),
+                ) {
+                    lines.forEach { line ->
+                        TerminalOutputLine(line, appSettings.fontSize)
+                    }
+                }
             }
         }
 
@@ -139,13 +267,11 @@ fun TerminalScreen() {
                     inputError = "Enter a command first"
                     return@Button
                 }
-                // TODO(phase2): encode input with KeySequences and write to the session channel.
-                val prompt = selected?.host?.let { "$it$ " } ?: "$ "
-                lines = lines + listOf(
-                    TerminalLine("$prompt$input", TerminalLineKind.COMMAND),
-                    TerminalLine("Command queued (mock output)", TerminalLineKind.OUTPUT),
-                    TerminalLine("$prompt", TerminalLineKind.PROMPT),
+                val enter = KeySequences.bytes(
+                    TerminalKey.Custom("Enter", "\r"),
+                    ModifierState(),
                 )
+                sessions.write(input.toByteArray(Charsets.UTF_8) + enter)
                 input = ""
             }) { Text("Send") }
         }
@@ -164,7 +290,68 @@ fun TerminalScreen() {
             Switch(checked = showKeypad, onCheckedChange = { showKeypad = it })
         }
 
-        if (showKeypad) ShortcutKeypad { token -> input += token }
+        if (showKeypad) {
+            ShortcutKeypad(
+                modifiers = modifiers,
+                onModifier = { key, lock ->
+                    val modifier = keypadModifier(key)
+                    if (modifier != null) {
+                        modifiers = if (lock) modifiers.lock(modifier) else modifiers.toggle(modifier)
+                    }
+                },
+                onKey = { key ->
+                    if (appSettings.haptics) {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    if (key is TerminalKey.Custom && key.label == "Clr") {
+                        modifiers = ModifierState()
+                    } else {
+                        sessions.write(KeySequences.bytes(key, modifiers))
+                    }
+                },
+            )
+        }
+    }
+
+    if (showProfilePicker) {
+        ProfilePickerDialog(
+            profiles = profiles,
+            onSelect = { profile ->
+                showProfilePicker = false
+                requestConnect(profile)
+            },
+            onDismiss = { showProfilePicker = false },
+        )
+    }
+
+    val step = connectStep
+    if (step is ConnectStep.Credentials) {
+        CredentialDialog(
+            profile = step.profile,
+            onDismiss = { connectStep = null },
+            onSubmit = { credential ->
+                scope.launch { resolveHostKey(step.profile, credential) }
+            },
+        )
+    }
+
+    if (step is ConnectStep.HostKey) {
+        HostKeyDialog(
+            info = step.info,
+            onAccept = {
+                scope.launch {
+                    val accepted = runCatching {
+                        connections.trustHost(step.info.host, step.info.fingerprint, step.info.algorithm)
+                    }
+                    if (accepted.isFailure) {
+                        connectError = "Host key acceptance failed: ${accepted.exceptionOrNull()?.message}"
+                    } else {
+                        completeConnect(step.profile, step.credential, step.info.fingerprint)
+                    }
+                }
+            },
+            onReject = { connectStep = null },
+        )
     }
 }
 
@@ -217,20 +404,135 @@ private fun ConnectionBar(session: SessionTab, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun EmptySessionBanner() {
+private fun EmptySessionBanner(onConnect: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("No session selected", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Create a connection to start a terminal session.",
+                "Choose a connection profile to start a terminal session.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            TextButton(onClick = onConnect) { Text("Connect to profile…") }
         }
     }
 }
 
 @Composable
-private fun TerminalOutputLine(line: TerminalLine) {
+private fun ProfilePickerDialog(
+    profiles: List<ConnectionProfile>,
+    onSelect: (ConnectionProfile) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select connection") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (profiles.isEmpty()) {
+                    Text("No profiles saved. Add one in Connections first.")
+                } else {
+                    profiles.forEach { profile ->
+                        TextButton(onClick = { onSelect(profile) }) {
+                            Text("${profile.username}@${profile.host}:${profile.port}")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun CredentialDialog(
+    profile: ConnectionProfile,
+    onDismiss: () -> Unit,
+    onSubmit: (SshCredential) -> Unit,
+) {
+    var password by rememberSaveable { mutableStateOf("") }
+    var privateKey by rememberSaveable { mutableStateOf("") }
+    var keyPassphrase by rememberSaveable { mutableStateOf("") }
+    var attempted by remember { mutableStateOf(false) }
+    val usesKey = profile.authType == AuthType.SSH_KEY
+    val missing = if (usesKey) privateKey.isBlank() else password.isBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Authenticate ${profile.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (usesKey) {
+                    OutlinedTextField(
+                        value = privateKey,
+                        onValueChange = { privateKey = it },
+                        label = { Text("Private key (PEM)") },
+                        minLines = 4,
+                        maxLines = 6,
+                        isError = attempted && privateKey.isBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    FormTextField(
+                        "Key passphrase",
+                        keyPassphrase,
+                        { keyPassphrase = it },
+                        password = true,
+                    )
+                } else {
+                    FormTextField(
+                        "Password",
+                        password,
+                        { password = it },
+                        if (attempted && password.isBlank()) "Password is required" else null,
+                        password = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                attempted = true
+                if (!missing) {
+                    onSubmit(
+                        if (usesKey) {
+                            SshCredential(
+                                privateKeyPem = privateKey,
+                                passphrase = keyPassphrase.ifBlank { null },
+                            )
+                        } else {
+                            SshCredential(password = password)
+                        },
+                    )
+                }
+            }) { Text("Connect") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun HostKeyDialog(info: HostKeyInfo, onAccept: () -> Unit, onReject: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onReject,
+        title = { Text("Verify host key") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(info.host, style = MaterialTheme.typography.bodyMedium)
+                Text(info.algorithm, style = MaterialTheme.typography.bodySmall)
+                Text(info.fingerprint, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "Verify this fingerprint out of band before accepting.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { Button(onClick = onAccept) { Text("Accept") } },
+        dismissButton = { TextButton(onClick = onReject) { Text("Reject") } },
+    )
+}
+
+@Composable
+private fun TerminalOutputLine(line: TerminalLine, fontSize: Float) {
     val colour = when (line.kind) {
         TerminalLineKind.COMMAND -> MaterialTheme.colorScheme.primary
         TerminalLineKind.ERROR -> MaterialTheme.colorScheme.error
@@ -239,19 +541,55 @@ private fun TerminalOutputLine(line: TerminalLine) {
     }
     Text(
         text = line.text,
-        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+        style = MaterialTheme.typography.bodySmall.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = fontSize.sp,
+        ),
         color = colour,
     )
 }
 
 @Composable
-private fun ShortcutKeypad(onKey: (String) -> Unit) {
+private fun ShortcutKeypad(
+    modifiers: ModifierState,
+    onModifier: (TerminalKey, Boolean) -> Unit,
+    onKey: (TerminalKey) -> Unit,
+) {
     SectionHeader("Shortcut keys")
     val rows = listOf(
-        listOf("Esc", "Tab", "Ctrl", "Alt", "Shift", "Fn"),
-        listOf("F1", "F2", "F3", "F4", "F5", "F6"),
-        listOf("↑", "↓", "←", "→", "Home", "End"),
-        listOf("Enter", "Backspace", "PgUp", "PgDn", "Ctrl+C", "Ctrl+D"),
+        listOf(
+            TerminalKey.Control,
+            TerminalKey.Alt,
+            TerminalKey.Escape,
+            TerminalKey.Tab,
+            TerminalKey.Shift,
+            TerminalKey.Fn,
+        ),
+        listOf(
+            TerminalKey.Arrow(ArrowDirection.UP),
+            TerminalKey.Arrow(ArrowDirection.DOWN),
+            TerminalKey.Arrow(ArrowDirection.LEFT),
+            TerminalKey.Arrow(ArrowDirection.RIGHT),
+            TerminalKey.Home,
+            TerminalKey.End,
+        ),
+        listOf(
+            TerminalKey.ControlLetter('C'),
+            TerminalKey.ControlLetter('D'),
+            TerminalKey.ControlLetter('Z'),
+            TerminalKey.Custom("PgUp", "\u001B[5~"),
+            TerminalKey.Custom("PgDn", "\u001B[6~"),
+            TerminalKey.Custom("Clr", ""),
+        ),
+        listOf(
+            TerminalKey.ControlLetter('E'),
+            TerminalKey.ControlLetter('W'),
+            TerminalKey.ControlLetter('U'),
+            TerminalKey.Custom("Enter", "\r"),
+            TerminalKey.Custom("Backspace", "\u007F"),
+            TerminalKey.ControlLetter('A'),
+        ),
+        (1..6).map { TerminalKey.FunctionKey(it) },
     )
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -260,13 +598,25 @@ private fun ShortcutKeypad(onKey: (String) -> Unit) {
         rows.forEach { row ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 row.forEach { key ->
+                    val modifier = keypadModifier(key)
                     KeyCap(
-                        text = key,
-                        onClick = { onKey("<$key>") },
+                        text = if (modifier != null && modifiers.isActive) "•${key.label}" else key.label,
+                        onClick = {
+                            if (modifier != null) onModifier(key, false) else onKey(key)
+                        },
+                        onLongClick = if (modifier != null) ({ onModifier(key, true) }) else null,
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
         }
     }
+}
+
+private fun keypadModifier(key: TerminalKey): KeypadModifier? = when (key) {
+    TerminalKey.Control -> KeypadModifier.CONTROL
+    TerminalKey.Alt -> KeypadModifier.ALT
+    TerminalKey.Shift -> KeypadModifier.SHIFT
+    TerminalKey.Fn -> KeypadModifier.FN
+    else -> null
 }

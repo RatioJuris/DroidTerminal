@@ -30,5 +30,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.jsch)
+    implementation(project(":security"))
+    implementation(project(":terminal-engine"))
     testImplementation(libs.junit)
 }
