@@ -10,6 +10,7 @@ package com.ratiojuris.droidterminal.ui.terminal
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -259,14 +261,24 @@ fun InAppKeyboard(
         }
 
         if (pad == KeyboardPad.KEYS) {
-            if (showFunctionRow) {
-                ScrollableKeyRow(functionRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    if (showFunctionRow) {
+                        ScrollableKeyRow(functionRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                    }
+                    WeightedKeyRow(numberRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                    WeightedKeyRow(topLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                    WeightedKeyRow(homeRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                    WeightedKeyRow(bottomLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                    ScrollableKeyRow(controlRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                }
             }
-            WeightedKeyRow(numberRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-            WeightedKeyRow(topLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-            WeightedKeyRow(homeRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-            WeightedKeyRow(bottomLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-            ScrollableKeyRow(controlRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
         } else {
             SelectPad(selectionActive, onSelectionAction)
         }
@@ -303,7 +315,6 @@ private fun WeightedKeyRow(
     smallText: Boolean,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         keys.forEach { def ->
@@ -334,9 +345,6 @@ private fun ScrollableKeyRow(
     onToggleCaps: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         keys.forEach { def ->
@@ -400,7 +408,8 @@ private fun RowScope.KeyboardKey(
         ModifierState.VisualState.ONE_SHOT -> MaterialTheme.colorScheme.onPrimaryContainer
         ModifierState.VisualState.OFF -> MaterialTheme.colorScheme.onSurface
     }
-    val baseModifier = if (fixedWidth) Modifier.width(56.dp) else Modifier.weight(def.weight)
+    val keyWidth = if (fixedWidth) 56.dp else 48.dp * def.weight
+    val baseModifier = Modifier.width(keyWidth)
 
     Box(
         modifier = baseModifier

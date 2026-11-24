@@ -47,7 +47,7 @@ User-requested changes after the first walkthrough: remove the keyboard on/off s
 
 ### High
 
-8. **QWERTY keyboard rows were clipped in portrait.** On `1080x2246` at density `480`, the bottom letter row and control row reported `[0,0][0,0]` bounds and were unreachable; hiding the F-row restored the letters but not the control row. Source: `InAppKeyboard.kt` docked a 40dp header plus six 48dp rows with 4dp spacing into about 260dp. Status: fix implemented, pending device verification — removed the keyboard switch row, removed navigation labels and empty-session text, reduced key/button height to 42dp, header buttons to 36dp, and spacing to 3–4dp.
+8. **QWERTY keyboard rows were clipped in portrait.** On `1080x2246` at density `480`, the bottom letter row and control row reported `[0,0][0,0]` bounds and were unreachable; hiding the F-row restored the letters but not the control row. Source: `InAppKeyboard.kt` docked a 40dp header plus six 48dp rows with 4dp spacing into about 260dp. Status: fix implemented, pending device verification — removed the keyboard switch row, navigation labels and empty-session text; reduced key/button height to 42dp and header buttons to 36dp; and placed the key grid in a bounded 260dp area that scrolls both vertically and horizontally with fixed-width keys.
 
 ### Medium
 
