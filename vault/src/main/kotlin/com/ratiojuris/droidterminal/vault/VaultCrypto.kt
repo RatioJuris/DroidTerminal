@@ -47,9 +47,11 @@ internal object VaultCrypto {
     }
 
     fun encrypt(plain: ByteArray, key: javax.crypto.SecretKey): String {
-        val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
+        // Android Keystore generates the GCM IV itself and rejects a caller-supplied one.
+        // Software keys behave the same way, so read the generated IV back for both.
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val iv = cipher.iv
         return encode(iv + cipher.doFinal(plain))
     }
 
