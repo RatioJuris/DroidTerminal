@@ -8,6 +8,7 @@
 package com.ratiojuris.droidterminal.ui.terminal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -87,6 +90,7 @@ private data class KeyDef(
     val preview: Boolean = false,
     val modifier: KeypadModifier? = null,
     val caps: Boolean = false,
+    val accent: Boolean = false,
 )
 
 private fun key(
@@ -99,7 +103,8 @@ private fun key(
     preview: Boolean = false,
     modifier: KeypadModifier? = null,
     caps: Boolean = false,
-): KeyDef = KeyDef(label, shiftedLabel, key, shiftedKey, weight, repeatable, preview, modifier, caps)
+    accent: Boolean = false,
+): KeyDef = KeyDef(label, shiftedLabel, key, shiftedKey, weight, repeatable, preview, modifier, caps, accent)
 
 private fun charKey(lower: Char, upper: Char, preview: Boolean = true): KeyDef = key(
     label = lower.toString(),
@@ -174,10 +179,15 @@ private val bottomLetterRow = listOf(
     key("Shift", TerminalKey.Shift, weight = 1.6f, modifier = KeypadModifier.SHIFT),
 )
 
-private val controlRow = listOf(
+private val editingRow = listOf(
     key("Ctrl", TerminalKey.Control, modifier = KeypadModifier.CONTROL),
     key("Alt", TerminalKey.Alt, modifier = KeypadModifier.ALT),
     key("Space", TerminalKey.Character(' '), weight = 3.2f),
+    key("Tab", TerminalKey.Tab),
+    key("Esc", TerminalKey.Escape),
+)
+
+private val navigationRow = listOf(
     key("←", TerminalKey.Arrow(ArrowDirection.LEFT), repeatable = true),
     key("↑", TerminalKey.Arrow(ArrowDirection.UP), repeatable = true),
     key("↓", TerminalKey.Arrow(ArrowDirection.DOWN), repeatable = true),
@@ -187,6 +197,18 @@ private val controlRow = listOf(
     key("PgUp", TerminalKey.PageUp, repeatable = true),
     key("PgDn", TerminalKey.PageDown, repeatable = true),
     key("Ins", TerminalKey.Insert),
+    key("Del", TerminalKey.Delete, repeatable = true),
+)
+
+private val numericRows = listOf(
+    listOf('7', '8', '9', '/').map { key(it.toString(), TerminalKey.Character(it), accent = true) },
+    listOf('4', '5', '6', '*').map { key(it.toString(), TerminalKey.Character(it), accent = true) },
+    listOf('1', '2', '3', '-').map { key(it.toString(), TerminalKey.Character(it), accent = true) },
+    listOf('0', '.', '=', '+').map { key(it.toString(), TerminalKey.Character(it), accent = true) },
+    listOf(
+        key("Ent", TerminalKey.Enter, accent = true),
+        key("BS", TerminalKey.Backspace, repeatable = true, accent = true),
+    ),
 )
 
 private val functionRow = listOf(
@@ -218,6 +240,7 @@ fun InAppKeyboard(
     modifier: Modifier = Modifier,
 ) {
     val shiftActive = modifiers.isEnabled(KeypadModifier.SHIFT)
+    val feedback = LocalHapticFeedback.current
 
     Column(
         modifier = modifier
@@ -233,12 +256,18 @@ fun InAppKeyboard(
         ) {
             FilterChip(
                 selected = pad == KeyboardPad.KEYS,
-                onClick = onTogglePad,
+                onClick = {
+                    if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onTogglePad()
+                },
                 label = { Text("Keys", style = MaterialTheme.typography.labelMedium) },
             )
             FilterChip(
                 selected = pad == KeyboardPad.SELECT,
-                onClick = onTogglePad,
+                onClick = {
+                    if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onTogglePad()
+                },
                 label = { Text("Select", style = MaterialTheme.typography.labelMedium) },
             )
             if (pad == KeyboardPad.SELECT || selectionActive) {
@@ -255,9 +284,9 @@ fun InAppKeyboard(
                 }
             }
             SpacerWeight()
-            SmallButton("Fx", onToggleFunctionRow)
-            SmallButton("Clr", onClearModifiers)
-            SmallButton("Hide", onHide)
+            SmallButton("Fx", haptics, onToggleFunctionRow)
+            SmallButton("Clr", haptics, onClearModifiers)
+            SmallButton("Hide", haptics, onHide)
         }
 
         if (pad == KeyboardPad.KEYS) {
@@ -268,21 +297,51 @@ fun InAppKeyboard(
                     .horizontalScroll(rememberScrollState())
                     .verticalScroll(rememberScrollState()),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    if (showFunctionRow) {
-                        ScrollableKeyRow(functionRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                Row(verticalAlignment = Alignment.Top) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        if (showFunctionRow) {
+                            KeySectionLabel("FUNCTION")
+                            ScrollableKeyRow(functionRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                        }
+                        KeySectionLabel("QWERTY")
+                        WeightedKeyRow(numberRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                        WeightedKeyRow(topLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                        WeightedKeyRow(homeRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                        WeightedKeyRow(bottomLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
+                        KeySectionLabel("EDIT / NAV")
+                        ScrollableKeyRow(editingRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                        ScrollableKeyRow(navigationRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
                     }
-                    WeightedKeyRow(numberRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-                    WeightedKeyRow(topLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-                    WeightedKeyRow(homeRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-                    WeightedKeyRow(bottomLetterRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps, smallText = true)
-                    ScrollableKeyRow(controlRow, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(2.dp)
+                            .height(210.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        KeySectionLabel("NUMERIC PAD")
+                        numericRows.forEach { row ->
+                            ScrollableKeyRow(row, modifiers, shiftActive, capsLock, haptics, onKey, onModifierTap, onToggleCaps)
+                        }
+                    }
                 }
             }
         } else {
-            SelectPad(selectionActive, onSelectionAction)
+            SelectPad(selectionActive, haptics, onSelectionAction)
         }
     }
+}
+
+@Composable
+private fun KeySectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp),
+    )
 }
 
 @Composable
@@ -291,9 +350,13 @@ private fun RowScope.SpacerWeight() {
 }
 
 @Composable
-private fun SmallButton(label: String, onClick: () -> Unit) {
+private fun SmallButton(label: String, haptics: Boolean, onClick: () -> Unit) {
+    val feedback = LocalHapticFeedback.current
     OutlinedButton(
-        onClick = onClick,
+        onClick = {
+            if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
         modifier = Modifier
             .height(36.dp)
             .semantics(mergeDescendants = true) { contentDescription = label },
@@ -401,12 +464,14 @@ private fun RowScope.KeyboardKey(
         pressed -> MaterialTheme.colorScheme.secondaryContainer
         visualState == ModifierState.VisualState.LOCKED -> MaterialTheme.colorScheme.primary
         visualState == ModifierState.VisualState.ONE_SHOT -> MaterialTheme.colorScheme.primaryContainer
+        def.accent -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
-    val contentColour = when (visualState) {
-        ModifierState.VisualState.LOCKED -> MaterialTheme.colorScheme.onPrimary
-        ModifierState.VisualState.ONE_SHOT -> MaterialTheme.colorScheme.onPrimaryContainer
-        ModifierState.VisualState.OFF -> MaterialTheme.colorScheme.onSurface
+    val contentColour = when {
+        visualState == ModifierState.VisualState.LOCKED -> MaterialTheme.colorScheme.onPrimary
+        visualState == ModifierState.VisualState.ONE_SHOT -> MaterialTheme.colorScheme.onPrimaryContainer
+        def.accent -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
     }
     val keyWidth = if (fixedWidth) 56.dp else 48.dp * def.weight
     val baseModifier = Modifier.width(keyWidth)
@@ -414,12 +479,23 @@ private fun RowScope.KeyboardKey(
     Box(
         modifier = baseModifier
             .height(42.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .graphicsLayer {
+                val scale = if (pressed) 0.96f else 1f
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(8.dp))
             .background(containerColour)
+            .border(
+                width = 1.dp,
+                color = if (pressed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(8.dp),
+            )
             .pointerInput(def, resolved) {
                 detectTapGestures(
                     onPress = {
                         pressed = true
+                        if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         if (def.repeatable) {
                             activateKey(def, resolved, onKey, onModifierTap, onToggleCaps)
                         }
@@ -489,7 +565,7 @@ private fun activateKey(
 }
 
 @Composable
-private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> Unit) {
+private fun SelectPad(selectionActive: Boolean, haptics: Boolean, onAction: (SelectionAction) -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -505,7 +581,7 @@ private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> U
                 ArrowDirection.RIGHT to SelectionAction.MOVE_RIGHT,
             ).forEach { (direction, action) ->
                 Box(modifier = Modifier.weight(1f)) {
-                    PadButton(direction.label, selectionActive) { onAction(action) }
+                    PadButton(direction.label, selectionActive, haptics) { onAction(action) }
                 }
             }
         }
@@ -514,6 +590,7 @@ private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> U
                 SelectionAction.SELECT, SelectionAction.SELECT_ALL, SelectionAction.CLEAR,
             ),
             selectionActive,
+            haptics,
             onAction,
         )
         PadRow(
@@ -521,6 +598,7 @@ private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> U
                 SelectionAction.SELECT_WORD, SelectionAction.SELECT_LINE,
             ),
             selectionActive,
+            haptics,
             onAction,
         )
         PadRow(
@@ -528,6 +606,7 @@ private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> U
                 SelectionAction.COPY, SelectionAction.PASTE,
             ),
             selectionActive,
+            haptics,
             onAction,
         )
     }
@@ -537,6 +616,7 @@ private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> U
 private fun PadRow(
     labelsAndActions: Pair<List<String>, List<SelectionAction>>,
     selectionActive: Boolean,
+    haptics: Boolean,
     onAction: (SelectionAction) -> Unit,
 ) {
     Row(
@@ -545,16 +625,25 @@ private fun PadRow(
     ) {
         labelsAndActions.first.forEachIndexed { index, label ->
             Box(modifier = Modifier.weight(1f)) {
-                PadButton(label, selectionActive) { onAction(labelsAndActions.second[index]) }
+                PadButton(label, selectionActive, haptics) { onAction(labelsAndActions.second[index]) }
             }
         }
     }
 }
 
 @Composable
-private fun PadButton(label: String, highlighted: Boolean = false, onClick: () -> Unit) {
+private fun PadButton(
+    label: String,
+    highlighted: Boolean = false,
+    haptics: Boolean,
+    onClick: () -> Unit,
+) {
+    val feedback = LocalHapticFeedback.current
     OutlinedButton(
-        onClick = onClick,
+        onClick = {
+            if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
         modifier = Modifier
             .fillMaxWidth()
             .height(42.dp)

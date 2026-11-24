@@ -8,7 +8,11 @@
 package com.ratiojuris.droidterminal.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
@@ -17,9 +21,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,8 +34,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ratiojuris.droidterminal.auth.BiometricAuth
 import com.ratiojuris.droidterminal.core.BuildInfo
@@ -88,13 +94,30 @@ fun DroidTerminalApp(container: AppContainer, biometricAuth: BiometricAuth) {
             )
         },
         bottomBar = {
-            NavigationBar {
-                Destination.entries.forEach { destination ->
-                    NavigationBarItem(
-                        selected = selected == destination,
-                        onClick = { selected = destination },
-                        icon = { Icon(destination.icon, contentDescription = destination.label) },
-                    )
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Destination.entries.forEach { destination ->
+                        IconButton(
+                            onClick = { selected = destination },
+                            modifier = Modifier.semantics(mergeDescendants = true) {
+                                contentDescription = destination.label
+                            },
+                        ) {
+                            Icon(
+                                destination.icon,
+                                contentDescription = destination.label,
+                                tint = if (selected == destination) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -111,6 +134,7 @@ fun DroidTerminalApp(container: AppContainer, biometricAuth: BiometricAuth) {
                     sessions = container.sessions,
                     gateway = container.sshGateway,
                     settings = container.settings,
+                    vault = container.vault,
                 )
                 Destination.VAULT -> VaultScreen(
                     vault = container.vault,

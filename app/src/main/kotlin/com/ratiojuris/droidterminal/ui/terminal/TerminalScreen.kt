@@ -7,6 +7,7 @@
 
 package com.ratiojuris.droidterminal.ui.terminal
 
+import android.util.Base64 as AndroidBase64
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -27,6 +28,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -91,6 +94,9 @@ import com.ratiojuris.droidterminal.ui.model.TerminalLineKind
 import com.ratiojuris.droidterminal.ui.model.toBackend
 import com.ratiojuris.droidterminal.ui.model.toUi
 import com.ratiojuris.droidterminal.ui.model.toUiLines
+import com.ratiojuris.droidterminal.vault.VaultItem as BackendVaultItem
+import com.ratiojuris.droidterminal.vault.VaultItemKind
+import com.ratiojuris.droidterminal.vault.VaultRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -101,8 +107,92 @@ private sealed interface ConnectStep {
         val profile: ConnectionProfile,
         val credential: SshCredential,
         val info: HostKeyInfo,
+        val saveCredential: Boolean,
     ) : ConnectStep
 }
+
+private data class QuickTarget(val username: String, val host: String, val port: Int)
+
+/** Parses the one-line terminal form `ssh user@host [-p port]`. */
+private fun parseQuickTarget(command: String): QuickTarget? {
+    val tokens = command.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (tokens.isEmpty() || !tokens[0].equals("ssh", ignoreCase = true)) return null
+
+    var target: String? = null
+    var port = 22
+    var index = 1
+    while (index < tokens.size) {
+        val token = tokens[index]
+        when {
+            token == "-p" || token == "--port" -> {
+                if (index + 1 >= tokens.size) return null
+                port = tokens[index + 1].toIntOrNull() ?: return null
+                index += 2
+            }
+            token.startsWith("-p") && token.length > 2 -> {
+                port = token.removePrefix("-p").toIntOrNull() ?: return null
+                index++
+            }
+            token.startsWith("--port=") -> {
+                port = token.removePrefix("--port=").toIntOrNull() ?: return null
+                index++
+            }
+            target == null && !token.startsWith("-") -> {
+                target = token
+                index++
+            }
+            else -> index++
+        }
+    }
+
+    val userHost = target ?: return null
+    val username = userHost.substringBefore('@')
+    val host = userHost.substringAfter('@')
+    if (username.isBlank() || host.isBlank() || port !in 1..65535) return null
+    return QuickTarget(username, host, port)
+}
+
+private fun credentialLabel(profile: ConnectionProfile): String =
+    "${profile.username}@${profile.host}:${profile.port}"
+
+private fun encodeCredential(credential: SshCredential): String = when {
+    credential.privateKeyPem != null -> {
+        val pem = AndroidBase64.encodeToString(
+            credential.privateKeyPem!!.toByteArray(Charsets.UTF_8),
+            AndroidBase64.NO_WRAP,
+        )
+        val passphrase = AndroidBase64.encodeToString(
+            credential.passphrase.orEmpty().toByteArray(Charsets.UTF_8),
+            AndroidBase64.NO_WRAP,
+        )
+        "key:$pem:$passphrase"
+    }
+    credential.password != null -> {
+        val password = AndroidBase64.encodeToString(
+            credential.password!!.toByteArray(Charsets.UTF_8),
+            AndroidBase64.NO_WRAP,
+        )
+        "password:$password"
+    }
+    else -> error("a password or private key is required")
+}
+
+private fun decodeCredential(raw: String): SshCredential? = runCatching {
+    val parts = raw.split(":", limit = 3)
+    when (parts[0]) {
+        "password" -> SshCredential(
+            password = String(AndroidBase64.decode(parts[1], AndroidBase64.NO_WRAP), Charsets.UTF_8),
+        )
+        "key" -> {
+            val passphrase = String(AndroidBase64.decode(parts[2], AndroidBase64.NO_WRAP), Charsets.UTF_8)
+            SshCredential(
+                privateKeyPem = String(AndroidBase64.decode(parts[1], AndroidBase64.NO_WRAP), Charsets.UTF_8),
+                passphrase = passphrase.ifBlank { null },
+            )
+        }
+        else -> null
+    }
+}.getOrNull()
 
 @Composable
 fun TerminalScreen(
@@ -110,6 +200,7 @@ fun TerminalScreen(
     sessions: SessionManager,
     gateway: SshGateway,
     settings: SettingsRepository,
+    vault: VaultRepository,
 ) {
     val tabs by sessions.tabs.collectAsState()
     val snapshots by sessions.snapshots.collectAsState()
@@ -117,6 +208,8 @@ fun TerminalScreen(
     val status by sessions.status.collectAsState()
     val appSettings by settings.settings.collectAsState(AppSettings())
     val storedProfiles by connections.profiles.collectAsState(emptyList())
+    val vaultUnlocked by vault.isUnlocked.collectAsState()
+    val vaultItems by vault.items.collectAsState(emptyList())
     val scope = rememberCoroutineScope()
     val terminalFocus = remember { FocusRequester() }
     val commandFocus = remember { FocusRequester() }
@@ -153,13 +246,72 @@ fun TerminalScreen(
         if (appSettings.useSystemKeyboard) commandFocus.requestFocus()
     }
     LaunchedEffect(activeId) { activeId?.let { selectedId = it } }
+    LaunchedEffect(selected?.id) {
+        if (selected == null) commandFocus.requestFocus()
+    }
     LaunchedEffect(cursorRow, cursorColumn) {
         scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
+    fun savedCredential(profile: ConnectionProfile): SshCredential? {
+        if (!vaultUnlocked) return null
+        val item = vaultItems.firstOrNull { it.label == credentialLabel(profile) } ?: return null
+        return vault.reveal(item.id).getOrNull()?.let(::decodeCredential)
+    }
+
+    suspend fun persistCredential(profile: ConnectionProfile, credential: SshCredential) {
+        if (!vaultUnlocked) {
+            connectError = "Connected, but the vault is locked; credential was not saved"
+            return
+        }
+        val label = credentialLabel(profile)
+        val kind = if (credential.privateKeyPem != null) VaultItemKind.SSH_KEY else VaultItemKind.PASSWORD
+        vault.items.value.firstOrNull { it.label == label }?.let { existing ->
+            vault.delete(existing.id).onFailure { failure ->
+                connectError = "Credential replace failed: ${failure.message ?: failure::class.simpleName}"
+            }
+        }
+        vault.add(label, kind, encodeCredential(credential))
+            .onFailure { failure ->
+                connectError = "Credential save failed: ${failure.message ?: failure::class.simpleName}"
+            }
     }
 
     fun submitCommand() {
         if (input.isBlank()) {
             inputError = "Enter a command first"
+            return
+        }
+        parseQuickTarget(input)?.let { quick ->
+            val label = "${quick.username}@${quick.host}:${quick.port}"
+            val existing = profiles.firstOrNull {
+                it.username == quick.username && it.host == quick.host && it.port == quick.port
+            }
+            val draft = ConnectionProfile(
+                id = "quick-$label",
+                name = label,
+                host = quick.host,
+                port = quick.port,
+                username = quick.username,
+                authType = AuthType.SSH_KEY,
+                group = "Quick",
+                lastUsed = System.currentTimeMillis(),
+            )
+            val saved = savedCredential(existing ?: draft)
+            val profile = existing ?: draft.copy(
+                authType = if (saved?.password != null && saved.privateKeyPem == null) {
+                    AuthType.PASSWORD
+                } else {
+                    AuthType.SSH_KEY
+                },
+            )
+            input = ""
+            inputError = null
+            requestConnect(profile)
+            return
+        }
+        if (selected == null) {
+            inputError = "Start a connection first, e.g. ssh user@host -p 22"
             return
         }
         sessions.write(input.toByteArray(Charsets.UTF_8) + KeySequences.bytes(TerminalKey.Enter, modes = terminalModes))
@@ -182,10 +334,21 @@ fun TerminalScreen(
         }
         sessions.clearStatus()
         connectError = null
+        val saved = savedCredential(profile)
+        if (saved != null) {
+            isConnecting = true
+            scope.launch { resolveHostKey(profile, saved, saveCredential = false) }
+            return
+        }
         connectStep = ConnectStep.Credentials(profile)
     }
 
-    suspend fun completeConnect(profile: ConnectionProfile, credential: SshCredential, fingerprint: String) {
+    suspend fun completeConnect(
+        profile: ConnectionProfile,
+        credential: SshCredential,
+        fingerprint: String,
+        saveCredential: Boolean,
+    ) {
         val result = sessions.connect(profile.toBackend(), credential, fingerprint, TerminalSize.DEFAULT)
         if (result.isSuccess) {
             selectedId = result.getOrThrow()
@@ -193,6 +356,7 @@ fun TerminalScreen(
             connectStep = null
             connectError = null
             isConnecting = false
+            if (saveCredential) persistCredential(profile, credential)
         } else {
             connectStep = null
             connectError = "Connection failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
@@ -200,10 +364,14 @@ fun TerminalScreen(
         }
     }
 
-    suspend fun resolveHostKey(profile: ConnectionProfile, credential: SshCredential) {
+    suspend fun resolveHostKey(
+        profile: ConnectionProfile,
+        credential: SshCredential,
+        saveCredential: Boolean,
+    ) {
         val trusted = connections.trustedFingerprint(profile.host)
         if (trusted != null) {
-            completeConnect(profile, credential, trusted)
+            completeConnect(profile, credential, trusted, saveCredential)
             return
         }
         when (appSettings.hostKeyPolicy) {
@@ -229,11 +397,11 @@ fun TerminalScreen(
                         isConnecting = false
                         connectError = "Host key acceptance failed: ${accepted.exceptionOrNull()?.message}"
                     } else {
-                        completeConnect(profile, credential, info.fingerprint)
+                        completeConnect(profile, credential, info.fingerprint, saveCredential)
                     }
                 } else {
                     isConnecting = false
-                    connectStep = ConnectStep.HostKey(profile, credential, info)
+                    connectStep = ConnectStep.HostKey(profile, credential, info, saveCredential)
                 }
             }
         }
@@ -321,7 +489,7 @@ fun TerminalScreen(
             }
         }
 
-        if (appSettings.useSystemKeyboard) {
+        if (appSettings.useSystemKeyboard || selected == null) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -332,7 +500,7 @@ fun TerminalScreen(
                         input = it
                         inputError = null
                     },
-                    label = { Text("Command") },
+                    label = { Text("Command / ssh user@host") },
                     singleLine = true,
                     isError = inputError != null,
                     modifier = Modifier
@@ -433,11 +601,14 @@ fun TerminalScreen(
     if (step is ConnectStep.Credentials) {
         CredentialDialog(
             profile = step.profile,
+            canSave = vaultUnlocked,
+            vaultItems = vaultItems.filter { it.kind != VaultItemKind.NOTE },
+            onRevealVaultItem = { id -> vault.reveal(id).getOrNull() },
             onDismiss = { connectStep = null },
-            onSubmit = { credential ->
+            onSubmit = { credential, saveCredential ->
                 connectStep = null
                 isConnecting = true
-                scope.launch { resolveHostKey(step.profile, credential) }
+                scope.launch { resolveHostKey(step.profile, credential, saveCredential) }
             },
         )
     }
@@ -456,7 +627,7 @@ fun TerminalScreen(
                         isConnecting = false
                         connectError = "Host key acceptance failed: ${accepted.exceptionOrNull()?.message}"
                     } else {
-                        completeConnect(step.profile, step.credential, step.info.fingerprint)
+                        completeConnect(step.profile, step.credential, step.info.fingerprint, step.saveCredential)
                     }
                 }
             },
@@ -512,7 +683,7 @@ private fun EmptySessionBanner(onConnect: () -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("No session selected", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Choose a connection profile to start a terminal session.",
+                "Type ssh user@host -p 22 below, or choose a saved profile.",
                 style = MaterialTheme.typography.bodySmall,
             )
             TextButton(onClick = onConnect) { Text("Connect to profile…") }
@@ -532,7 +703,7 @@ private fun ProfilePickerDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (profiles.isEmpty()) {
-                    Text("No profiles saved. Add one in Connections first.")
+                    Text("No profiles saved. Type ssh user@host -p 22 instead.")
                 } else {
                     profiles.forEach { profile ->
                         TextButton(onClick = { onSelect(profile) }) {
@@ -550,14 +721,20 @@ private fun ProfilePickerDialog(
 @Composable
 private fun CredentialDialog(
     profile: ConnectionProfile,
+    canSave: Boolean,
+    vaultItems: List<BackendVaultItem>,
+    onRevealVaultItem: (String) -> String?,
     onDismiss: () -> Unit,
-    onSubmit: (SshCredential) -> Unit,
+    onSubmit: (SshCredential, Boolean) -> Unit,
 ) {
     var password by rememberSaveable { mutableStateOf("") }
     var privateKey by rememberSaveable { mutableStateOf("") }
     var keyPassphrase by rememberSaveable { mutableStateOf("") }
+    var usesKey by rememberSaveable(profile.id, profile.authType) {
+        mutableStateOf(profile.authType == AuthType.SSH_KEY)
+    }
+    var saveCredential by rememberSaveable { mutableStateOf(canSave) }
     var attempted by remember { mutableStateOf(false) }
-    val usesKey = profile.authType == AuthType.SSH_KEY
     val missing = if (usesKey) privateKey.isBlank() else password.isBlank()
 
     AlertDialog(
@@ -565,6 +742,36 @@ private fun CredentialDialog(
         title = { Text("Authenticate ${profile.name}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Authentication", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = usesKey,
+                        onClick = { usesKey = true },
+                        label = { Text("SSH key") },
+                    )
+                    FilterChip(
+                        selected = !usesKey,
+                        onClick = { usesKey = false },
+                        label = { Text("Password") },
+                    )
+                }
+                if (vaultItems.isNotEmpty()) {
+                    Text("Use saved credential", style = MaterialTheme.typography.labelLarge)
+                    vaultItems.take(4).forEach { item ->
+                        TextButton(onClick = {
+                            onRevealVaultItem(item.id)?.let { secret ->
+                                if (item.kind == VaultItemKind.SSH_KEY || item.kind == VaultItemKind.CERTIFICATE) {
+                                    usesKey = true
+                                    privateKey = secret
+                                } else {
+                                    usesKey = false
+                                    password = secret
+                                }
+                                attempted = false
+                            }
+                        }) { Text(item.label) }
+                    }
+                }
                 if (usesKey) {
                     OutlinedTextField(
                         value = privateKey,
@@ -590,6 +797,17 @@ private fun CredentialDialog(
                         password = true,
                     )
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = saveCredential && canSave,
+                        enabled = canSave,
+                        onCheckedChange = { saveCredential = it },
+                    )
+                    Text(
+                        if (canSave) "Save in Vault" else "Unlock Vault to save this credential",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -605,6 +823,7 @@ private fun CredentialDialog(
                         } else {
                             SshCredential(password = password)
                         },
+                        canSave && saveCredential,
                     )
                 }
             }) { Text("Connect") }
