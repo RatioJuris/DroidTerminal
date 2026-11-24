@@ -277,72 +277,6 @@ fun TerminalScreen(
             }
     }
 
-    fun submitCommand() {
-        if (input.isBlank()) {
-            inputError = "Enter a command first"
-            return
-        }
-        parseQuickTarget(input)?.let { quick ->
-            val label = "${quick.username}@${quick.host}:${quick.port}"
-            val existing = profiles.firstOrNull {
-                it.username == quick.username && it.host == quick.host && it.port == quick.port
-            }
-            val draft = ConnectionProfile(
-                id = "quick-$label",
-                name = label,
-                host = quick.host,
-                port = quick.port,
-                username = quick.username,
-                authType = AuthType.SSH_KEY,
-                group = "Quick",
-                lastUsed = System.currentTimeMillis(),
-            )
-            val saved = savedCredential(existing ?: draft)
-            val profile = existing ?: draft.copy(
-                authType = if (saved?.password != null && saved.privateKeyPem == null) {
-                    AuthType.PASSWORD
-                } else {
-                    AuthType.SSH_KEY
-                },
-            )
-            input = ""
-            inputError = null
-            requestConnect(profile)
-            return
-        }
-        if (selected == null) {
-            inputError = "Start a connection first, e.g. ssh user@host -p 22"
-            return
-        }
-        sessions.write(input.toByteArray(Charsets.UTF_8) + KeySequences.bytes(TerminalKey.Enter, modes = terminalModes))
-        input = ""
-        inputError = null
-    }
-
-    BackHandler(enabled = showKeypad || connectStep != null || showProfilePicker) {
-        when {
-            connectStep != null -> connectStep = null
-            showProfilePicker -> showProfilePicker = false
-            else -> showKeypad = false
-        }
-    }
-
-    fun requestConnect(profile: ConnectionProfile) {
-        if (profile.authType == AuthType.AGENT) {
-            connectError = "Agent authentication is not implemented"
-            return
-        }
-        sessions.clearStatus()
-        connectError = null
-        val saved = savedCredential(profile)
-        if (saved != null) {
-            isConnecting = true
-            scope.launch { resolveHostKey(profile, saved, saveCredential = false) }
-            return
-        }
-        connectStep = ConnectStep.Credentials(profile)
-    }
-
     suspend fun completeConnect(
         profile: ConnectionProfile,
         credential: SshCredential,
@@ -404,6 +338,72 @@ fun TerminalScreen(
                     connectStep = ConnectStep.HostKey(profile, credential, info, saveCredential)
                 }
             }
+        }
+    }
+
+    fun requestConnect(profile: ConnectionProfile) {
+        if (profile.authType == AuthType.AGENT) {
+            connectError = "Agent authentication is not implemented"
+            return
+        }
+        sessions.clearStatus()
+        connectError = null
+        val saved = savedCredential(profile)
+        if (saved != null) {
+            isConnecting = true
+            scope.launch { resolveHostKey(profile, saved, saveCredential = false) }
+            return
+        }
+        connectStep = ConnectStep.Credentials(profile)
+    }
+
+    fun submitCommand() {
+        if (input.isBlank()) {
+            inputError = "Enter a command first"
+            return
+        }
+        parseQuickTarget(input)?.let { quick ->
+            val label = "${quick.username}@${quick.host}:${quick.port}"
+            val existing = profiles.firstOrNull {
+                it.username == quick.username && it.host == quick.host && it.port == quick.port
+            }
+            val draft = ConnectionProfile(
+                id = "quick-$label",
+                name = label,
+                host = quick.host,
+                port = quick.port,
+                username = quick.username,
+                authType = AuthType.SSH_KEY,
+                group = "Quick",
+                lastUsed = System.currentTimeMillis(),
+            )
+            val saved = savedCredential(existing ?: draft)
+            val profile = existing ?: draft.copy(
+                authType = if (saved?.password != null && saved.privateKeyPem == null) {
+                    AuthType.PASSWORD
+                } else {
+                    AuthType.SSH_KEY
+                },
+            )
+            input = ""
+            inputError = null
+            requestConnect(profile)
+            return
+        }
+        if (selected == null) {
+            inputError = "Start a connection first, e.g. ssh user@host -p 22"
+            return
+        }
+        sessions.write(input.toByteArray(Charsets.UTF_8) + KeySequences.bytes(TerminalKey.Enter, modes = terminalModes))
+        input = ""
+        inputError = null
+    }
+
+    BackHandler(enabled = showKeypad || connectStep != null || showProfilePicker) {
+        when {
+            connectStep != null -> connectStep = null
+            showProfilePicker -> showProfilePicker = false
+            else -> showKeypad = false
         }
     }
 
