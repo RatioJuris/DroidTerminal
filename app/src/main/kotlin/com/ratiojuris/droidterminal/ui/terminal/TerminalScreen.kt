@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -607,7 +608,11 @@ private fun ShortcutKeypad(
         (1..6).map { TerminalKey.FunctionKey(it) },
     )
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 180.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         rows.forEach { row ->
