@@ -7,7 +7,11 @@
 
 package com.ratiojuris.droidterminal.ui.vault
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,23 +40,57 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ratiojuris.droidterminal.auth.BiometricAuth
 import com.ratiojuris.droidterminal.auth.VaultAutoLock
+import com.ratiojuris.droidterminal.connections.ConnectionRepository
 import com.ratiojuris.droidterminal.settings.AppSettings
 import com.ratiojuris.droidterminal.settings.SettingsRepository
+import com.ratiojuris.droidterminal.sshengine.SshGateway
 import com.ratiojuris.droidterminal.ui.components.ConfirmDialog
 import com.ratiojuris.droidterminal.ui.components.EmptyState
 import com.ratiojuris.droidterminal.ui.components.ErrorState
 import com.ratiojuris.droidterminal.ui.components.FormTextField
 import com.ratiojuris.droidterminal.ui.components.SectionHeader
+import com.ratiojuris.droidterminal.ui.connections.ConnectionProfilesSection
 import com.ratiojuris.droidterminal.ui.model.UiValidation
 import com.ratiojuris.droidterminal.ui.model.VaultItem
 import com.ratiojuris.droidterminal.ui.model.VaultItemKind
 import com.ratiojuris.droidterminal.ui.model.toBackend
 import com.ratiojuris.droidterminal.ui.model.toUi
 import com.ratiojuris.droidterminal.vault.VaultRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val MAX_IMPORT_CHARS = 1_048_576
+
+private data class VaultFormDraft(val label: String, val kind: VaultItemKind, val secret: String)
+
+private fun inferVaultKind(text: String): VaultItemKind = when {
+    text.contains("PRIVATE KEY-----", ignoreCase = true) -> VaultItemKind.SSH_KEY
+    text.contains("CERTIFICATE-----", ignoreCase = true) -> VaultItemKind.CERTIFICATE
+    else -> VaultItemKind.PASSWORD
+}
+
+private fun readImportedFile(context: Context, uri: Uri): Result<Pair<String, String>> = runCatching {
+    val name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        ?: "Imported file"
+    val text = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+        val buffer = CharArray(8192)
+        val content = StringBuilder()
+        while (true) {
+            val read = reader.read(buffer)
+            if (read == -1) break
+            content.append(buffer, 0, read)
+            check(content.length <= MAX_IMPORT_CHARS) { "File is too large to import (max 1 MB)" }
+        }
+        content.toString()
+    } ?: error("Cannot read the selected file")
+    check(text.isNotBlank()) { "The selected file is empty" }
+    name to text
+}
 
 @Composable
 fun VaultScreen(
@@ -60,6 +98,8 @@ fun VaultScreen(
     autoLock: VaultAutoLock,
     biometric: BiometricAuth,
     settings: SettingsRepository,
+    connections: ConnectionRepository,
+    gateway: SshGateway,
 ) {
     val unlocked by vault.isUnlocked.collectAsState()
     val storedItems by vault.items.collectAsState()
@@ -76,6 +116,26 @@ fun VaultScreen(
     var requireBiometric by remember { mutableStateOf(settingsState.requireBiometric) }
     var autoLockEnabled by remember { mutableStateOf(settingsState.autoLockVault) }
     var notice by remember { mutableStateOf<String?>(null) }
+    var formInitial by remember { mutableStateOf<VaultFormDraft?>(null) }
+    val context = LocalContext.current
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) { readImportedFile(context, uri) }
+            loaded.onSuccess { (fileName, secret) ->
+                val label = fileName.substringBeforeLast('.').ifBlank { fileName }
+                formInitial = VaultFormDraft(
+                    label = label,
+                    kind = inferVaultKind(secret),
+                    secret = secret,
+                )
+                showAddForm = true
+                notice = null
+            }.onFailure { failure ->
+                notice = "Import failed: ${failure.message ?: failure::class.simpleName}"
+            }
+        }
+    }
 
     LaunchedEffect(settingsState) {
         requireBiometric = settingsState.requireBiometric
@@ -90,7 +150,10 @@ fun VaultScreen(
                 revealedSecret = null
             }
             pendingDelete != null -> pendingDelete = null
-            else -> showAddForm = false
+            else -> {
+                showAddForm = false
+                formInitial = null
+            }
         }
     }
 
@@ -147,7 +210,13 @@ fun VaultScreen(
                 }) { Text("Lock") }
             }
 
-            Button(onClick = { showAddForm = true }) { Text("Add credential") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    formInitial = null
+                    showAddForm = true
+                }) { Text("Add credential") }
+                TextButton(onClick = { importLauncher.launch("*/*") }) { Text("Import file") }
+            }
 
             notice?.let {
                 ErrorState(it, onRetry = { notice = null })
@@ -158,7 +227,10 @@ fun VaultScreen(
                     "No credentials",
                     "Store a password, SSH key or certificate in this vault.",
                     "Add credential",
-                    { showAddForm = true },
+                    {
+                        formInitial = null
+                        showAddForm = true
+                    },
                 )
             } else {
                 SectionHeader("${items.size} stored item(s)")
@@ -173,6 +245,9 @@ fun VaultScreen(
                     )
                 }
             }
+
+            SectionHeader("Connections")
+            ConnectionProfilesSection(repository = connections, gateway = gateway)
 
             SectionHeader("Vault options")
             SettingToggle("Require biometric unlock", requireBiometric) { enabled ->
@@ -195,12 +270,17 @@ fun VaultScreen(
 
     if (showAddForm) {
         VaultItemForm(
-            onDismiss = { showAddForm = false },
+            initial = formInitial,
+            onDismiss = {
+                showAddForm = false
+                formInitial = null
+            },
             onSave = { label, kind, secret ->
                 scope.launch {
                     vault.add(label, kind.toBackend(), secret)
                         .onSuccess {
                             showAddForm = false
+                            formInitial = null
                             notice = null
                         }
                         .onFailure { failure ->
@@ -311,12 +391,13 @@ private fun VaultItemCard(item: VaultItem, onOpen: () -> Unit, onDelete: () -> U
 
 @Composable
 private fun VaultItemForm(
+    initial: VaultFormDraft?,
     onDismiss: () -> Unit,
     onSave: (String, VaultItemKind, String) -> Unit,
 ) {
-    var label by rememberSaveable { mutableStateOf("") }
-    var secret by rememberSaveable { mutableStateOf("") }
-    var kind by rememberSaveable { mutableStateOf(VaultItemKind.PASSWORD) }
+    var label by remember(initial) { mutableStateOf(initial?.label ?: "") }
+    var secret by remember(initial) { mutableStateOf(initial?.secret ?: "") }
+    var kind by remember(initial) { mutableStateOf(initial?.kind ?: VaultItemKind.PASSWORD) }
     var attempted by remember { mutableStateOf(false) }
     val errors = UiValidation.validateVaultItem(label, secret)
 

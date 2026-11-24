@@ -13,7 +13,7 @@ data class AppSettings(
     val scrollback: Int = DEFAULT_SCROLLBACK,
     val showKeypad: Boolean = true,
     val haptics: Boolean = true,
-    val longPressModifier: Boolean = false,
+    val useSystemKeyboard: Boolean = false,
     val autoLockVault: Boolean = true,
     val requireBiometric: Boolean = false,
     val hostKeyPolicy: Int = HOST_KEY_WARN,

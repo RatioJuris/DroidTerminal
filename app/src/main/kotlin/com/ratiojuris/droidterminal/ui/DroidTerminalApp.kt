@@ -8,18 +8,22 @@
 package com.ratiojuris.droidterminal.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.NetworkWifi
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,14 +35,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ratiojuris.droidterminal.auth.BiometricAuth
 import com.ratiojuris.droidterminal.core.BuildInfo
 import com.ratiojuris.droidterminal.di.AppContainer
 import com.ratiojuris.droidterminal.settings.AppSettings
-import com.ratiojuris.droidterminal.ui.connections.ConnectionsScreen
 import com.ratiojuris.droidterminal.ui.sftp.SftpScreen
 import com.ratiojuris.droidterminal.ui.settings.SettingsScreen
 import com.ratiojuris.droidterminal.ui.terminal.TerminalScreen
@@ -49,10 +55,9 @@ enum class Destination(
     val label: String,
     val icon: ImageVector,
 ) {
-    TERMINAL("Terminal", Icons.Filled.Home),
-    CONNECTIONS("Connections", Icons.AutoMirrored.Filled.List),
-    VAULT("Vault", Icons.Filled.Lock),
-    SFTP("SFTP", Icons.AutoMirrored.Filled.List),
+    TERMINAL("Terminal", Icons.Filled.Terminal),
+    VAULT("Vault", Icons.Filled.Key),
+    SFTP("SFTP", Icons.Filled.NetworkWifi),
     SETTINGS("Settings", Icons.Filled.Settings),
 }
 
@@ -90,14 +95,33 @@ fun DroidTerminalApp(container: AppContainer, biometricAuth: BiometricAuth) {
             )
         },
         bottomBar = {
-            NavigationBar {
-                Destination.entries.forEach { destination ->
-                    NavigationBarItem(
-                        selected = selected == destination,
-                        onClick = { selected = destination },
-                        icon = { Icon(destination.icon, contentDescription = null) },
-                        label = { Text(destination.label) },
-                    )
+            Surface(
+                modifier = Modifier.navigationBarsPadding(),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Destination.entries.forEach { destination ->
+                        IconButton(
+                            onClick = { selected = destination },
+                            modifier = Modifier.semantics(mergeDescendants = true) {
+                                contentDescription = destination.label
+                            },
+                        ) {
+                            Icon(
+                                destination.icon,
+                                contentDescription = destination.label,
+                                tint = if (selected == destination) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -114,16 +138,15 @@ fun DroidTerminalApp(container: AppContainer, biometricAuth: BiometricAuth) {
                     sessions = container.sessions,
                     gateway = container.sshGateway,
                     settings = container.settings,
-                )
-                Destination.CONNECTIONS -> ConnectionsScreen(
-                    repository = container.connections,
-                    gateway = container.sshGateway,
+                    vault = container.vault,
                 )
                 Destination.VAULT -> VaultScreen(
                     vault = container.vault,
                     autoLock = container.vaultAutoLock,
                     biometric = biometricAuth,
                     settings = container.settings,
+                    connections = container.connections,
+                    gateway = container.sshGateway,
                 )
                 Destination.SFTP -> SftpScreen(
                     sftp = container.sftp,

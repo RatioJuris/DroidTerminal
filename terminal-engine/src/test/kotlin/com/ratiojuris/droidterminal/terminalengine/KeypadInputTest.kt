@@ -73,4 +73,15 @@ class KeypadInputTest {
         )
         assertEquals(ModifierState.NONE, locked.cancel())
     }
+
+    @Test
+    fun `QWERTY keyboard keys produce standard terminal bytes`() {
+        assertArrayEquals(byteArrayOf(0x0D), KeySequences.bytes(TerminalKey.Enter))
+        assertArrayEquals(byteArrayOf(0x7F), KeySequences.bytes(TerminalKey.Backspace))
+        assertArrayEquals(
+            byteArrayOf(0x1B, 0x5B, 0x33, 0x7E),
+            KeySequences.bytes(TerminalKey.Delete),
+        )
+        assertArrayEquals(byteArrayOf(0x61), KeySequences.bytes(TerminalKey.Character('a')))
+    }
 }

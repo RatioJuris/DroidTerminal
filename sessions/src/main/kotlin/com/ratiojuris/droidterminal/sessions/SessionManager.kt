@@ -161,6 +161,62 @@ class SessionManager(
         }
     }
 
+    /** Selection operations for the active session; each publishes a fresh snapshot. */
+    @Synchronized
+    fun beginSelection(row: Int, column: Int) {
+        val session = activeSession() ?: return
+        session.emulator.beginSelection(row, column)
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun moveSelectionHead(row: Int, column: Int) {
+        val session = activeSession() ?: return
+        session.emulator.moveSelectionHead(row, column)
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun extendSelection(deltaRow: Int, deltaColumn: Int) {
+        val session = activeSession() ?: return
+        session.emulator.extendSelection(deltaRow, deltaColumn)
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun selectAll() {
+        val session = activeSession() ?: return
+        session.emulator.selectAll()
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun selectLine() {
+        val session = activeSession() ?: return
+        session.emulator.selectLine()
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun selectWord() {
+        val session = activeSession() ?: return
+        session.emulator.selectWord()
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun clearSelection() {
+        val session = activeSession() ?: return
+        session.emulator.clearSelection()
+        publishSnapshot(session)
+    }
+
+    @Synchronized
+    fun selectionText(): String = activeSession()?.emulator?.snapshot()?.selectedText.orEmpty()
+
+    @Synchronized
+    fun selectionActive(): Boolean = activeSession()?.emulator?.snapshot()?.selection != null
+
     /** Applies a viewport change to the active emulator and remote pty. */
     @Synchronized
     fun resize(size: TerminalSize) {

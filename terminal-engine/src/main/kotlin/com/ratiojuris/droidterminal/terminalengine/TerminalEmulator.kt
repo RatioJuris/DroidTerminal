@@ -31,6 +31,8 @@ class TerminalEmulator(
         .onUnmappableCharacter(CodingErrorAction.REPLACE)
 
     private var pendingBytes = ByteArray(0)
+    private var bracketedPaste = false
+    private var applicationCursorKeys = false
 
     val size: TerminalSize
         @Synchronized get() = screen.size
@@ -66,7 +68,31 @@ class TerminalEmulator(
     }
 
     @Synchronized
-    fun snapshot(): TerminalSnapshot = screen.snapshot()
+    fun beginSelection(row: Int, column: Int) = screen.beginSelection(row, column)
+
+    @Synchronized
+    fun moveSelectionHead(row: Int, column: Int) = screen.moveSelectionHead(row, column)
+
+    @Synchronized
+    fun extendSelection(deltaRow: Int, deltaColumn: Int) = screen.extendSelection(deltaRow, deltaColumn)
+
+    @Synchronized
+    fun selectAll() = screen.selectAll()
+
+    @Synchronized
+    fun selectLine() = screen.selectLine()
+
+    @Synchronized
+    fun selectWord() = screen.selectWord()
+
+    @Synchronized
+    fun clearSelection() = screen.clearSelection()
+
+    @Synchronized
+    fun snapshot(): TerminalSnapshot = screen.snapshot().copy(
+        bracketedPaste = bracketedPaste,
+        applicationCursorKeys = applicationCursorKeys,
+    )
 
     private fun decode(bytes: ByteArray): String {
         val data = if (pendingBytes.isEmpty()) bytes else pendingBytes + bytes
@@ -155,8 +181,10 @@ class TerminalEmulator(
     private fun applyPrivateMode(parameters: List<Int>, enabled: Boolean) {
         parameters.forEach { mode ->
             when (mode) {
+                1 -> applicationCursorKeys = enabled
                 7 -> screen.setAutoWrap(enabled)
                 25 -> screen.setCursorVisible(enabled)
+                2004 -> bracketedPaste = enabled
                 else -> Unit
             }
         }
@@ -164,7 +192,11 @@ class TerminalEmulator(
 
     private fun applyEscape(final: Char) {
         when (final) {
-            'c' -> screen.reset()
+            'c' -> {
+                screen.reset()
+                bracketedPaste = false
+                applicationCursorKeys = false
+            }
             '7' -> screen.saveCursor()
             '8' -> screen.restoreCursor()
             'D' -> screen.index()
