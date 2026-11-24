@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -70,6 +71,7 @@ import com.ratiojuris.droidterminal.ui.model.ConnectionProfile
 import com.ratiojuris.droidterminal.ui.model.SessionTab
 import com.ratiojuris.droidterminal.ui.model.TerminalLine
 import com.ratiojuris.droidterminal.ui.model.TerminalLineKind
+import com.ratiojuris.droidterminal.ui.model.toBackend
 import com.ratiojuris.droidterminal.ui.model.toUi
 import com.ratiojuris.droidterminal.ui.model.toUiLines
 import kotlinx.coroutines.Dispatchers
@@ -144,7 +146,7 @@ fun TerminalScreen(
     }
 
     suspend fun completeConnect(profile: ConnectionProfile, credential: SshCredential, fingerprint: String) {
-        val result = sessions.connect(profile, credential, fingerprint, TerminalSize.DEFAULT)
+        val result = sessions.connect(profile.toBackend(), credential, fingerprint, TerminalSize.DEFAULT)
         if (result.isSuccess) {
             selectedId = result.getOrThrow()
             runCatching { connections.touch(profile.id) }
