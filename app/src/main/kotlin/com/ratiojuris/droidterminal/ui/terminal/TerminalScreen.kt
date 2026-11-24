@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -66,7 +65,6 @@ import com.ratiojuris.droidterminal.ui.components.ErrorState
 import com.ratiojuris.droidterminal.ui.components.FormTextField
 import com.ratiojuris.droidterminal.ui.components.KeyCap
 import com.ratiojuris.droidterminal.ui.components.LoadingState
-import com.ratiojuris.droidterminal.ui.components.SectionHeader
 import com.ratiojuris.droidterminal.ui.model.AuthType
 import com.ratiojuris.droidterminal.ui.model.ConnectionProfile
 import com.ratiojuris.droidterminal.ui.model.SessionTab
@@ -571,7 +569,6 @@ private fun ShortcutKeypad(
     onModifier: (TerminalKey, Boolean) -> Unit,
     onKey: (TerminalKey) -> Unit,
 ) {
-    SectionHeader("Shortcut keys")
     val rows = listOf(
         listOf(
             TerminalKey.Control,
@@ -610,10 +607,10 @@ private fun ShortcutKeypad(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 180.dp)
+            .height(216.dp)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         rows.forEach { row ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
