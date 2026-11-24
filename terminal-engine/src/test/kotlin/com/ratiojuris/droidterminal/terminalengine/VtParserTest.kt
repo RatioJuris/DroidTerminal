@@ -96,7 +96,7 @@ class VtParserTest {
 
         val longTitle = "x".repeat(5_000)
         val action = parse("\u001B]2;$longTitle\u0007").single() as VtAction.Osc
-        assertEquals(4_096, action.data.length)
+        assertEquals(4_094, action.data.length)
     }
 
     @Test

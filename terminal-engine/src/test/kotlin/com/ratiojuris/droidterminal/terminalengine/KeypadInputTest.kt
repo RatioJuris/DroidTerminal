@@ -67,7 +67,7 @@ class KeypadInputTest {
     fun `locked modifiers do not require toggle to be cleared`() {
         val locked = ModifierState(locked = Modifier.CONTROL)
 
-        assertEquals(
+        assertArrayEquals(
             byteArrayOf(0x03),
             KeySequences.bytes(TerminalKey.ControlLetter('C'), locked),
         )

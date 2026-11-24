@@ -166,15 +166,16 @@ class TerminalEmulatorTest {
 
         emulator.feed("abcdef\u001B[1;3H\u001B[2X")
 
-        assertEquals("abef", emulator.snapshot().renderText())
+        assertEquals("ab  ef", emulator.snapshot().renderText())
         assertEquals(Cursor(0, 2), emulator.cursor)
     }
 
     @Test
     fun `erase display mode three clears scrollback`() {
-        val emulator = TerminalEmulator(TerminalSize(4, 2), scrollbackLimit = 2)
-        emulator.feed("a\nb\nc\nd")
-        assertEquals("a\nb", emulator.snapshot().renderScrollbackText())
+        val emulator = TerminalEmulator(TerminalSize(4, 3), scrollbackLimit = 2)
+        emulator.feed("ab\r\ncd\r\nef\r\ngh\r\nij")
+        assertEquals("ab\ncd", emulator.snapshot().renderScrollbackText())
+        assertEquals("ef\ngh\nij", emulator.snapshot().renderText())
 
         emulator.feed("\u001B[3J")
 
@@ -219,14 +220,14 @@ class TerminalEmulatorTest {
 
         emulator.feed("T\r\nU\r\nV\r\nW")
 
-        assertEquals("Ta\nVc\nW", emulator.snapshot().renderText())
+        assertEquals("T\nV\nW", emulator.snapshot().renderText())
         assertTrue(emulator.snapshot().scrollback.isEmpty())
     }
 
     @Test
     fun `reverse index scrolls region down at top margin`() {
         val emulator = TerminalEmulator(TerminalSize(4, 3))
-        emulator.feed("a\r\nb\r\nc\u001B[2;3r\u001B[2;1H\u001B[1M")
+        emulator.feed("a\r\nb\r\nc\u001B[2;3r\u001B[2;1H\u001BM")
 
         assertEquals("a\n\nb", emulator.snapshot().renderText())
     }
@@ -240,7 +241,7 @@ class TerminalEmulatorTest {
         assertFalse(emulator.cursorVisible)
 
         emulator.feed("abcdef")
-        assertEquals("abcd", emulator.snapshot().renderText())
+        assertEquals("abcf", emulator.snapshot().renderText())
         assertEquals(Cursor(0, 3), emulator.cursor)
 
         emulator.feed("\u001B[?7h\u001B[?25h")

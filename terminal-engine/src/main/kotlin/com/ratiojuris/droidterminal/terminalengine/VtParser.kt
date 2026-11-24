@@ -30,6 +30,7 @@ internal class VtParser {
     private var state = State.GROUND
     private val parameters = ArrayList<Int>(INITIAL_PARAMETER_CAPACITY)
     private var currentParameter: Int? = null
+    private var parameterStarted = false
     private var parameterOverflow = false
     private var privatePrefix: Char? = null
     private var intermediate: Char? = null
@@ -98,6 +99,11 @@ internal class VtParser {
             state = State.SS3
             null
         }
+        // ESC 7/8 (DECSC/DECRC) use final bytes below 0x40.
+        codePoint == '7'.code || codePoint == '8'.code -> {
+            state = State.GROUND
+            VtAction.Escape(codePoint.toChar())
+        }
         codePoint in 0x20..0x2F -> {
             escapeIntermediate = codePoint.toChar()
             state = State.ESCAPE_INTERMEDIATE
@@ -153,6 +159,7 @@ internal class VtParser {
             }
             codePoint < 0x20 -> return null
             codePoint in 0x30..0x39 -> {
+                parameterStarted = true
                 if (!parameterOverflow) {
                     val digit = codePoint - '0'.code
                     currentParameter = ((currentParameter ?: 0) * 10 + digit)
@@ -161,6 +168,7 @@ internal class VtParser {
                 return null
             }
             codePoint == ';'.code || codePoint == ':'.code -> {
+                parameterStarted = true
                 pushParameter()
                 return null
             }
@@ -176,7 +184,9 @@ internal class VtParser {
                 return null
             }
             codePoint in 0x40..0x7E -> {
-                pushParameter()
+                // A bare CSI final has no parameters; a separator still means an
+                // explicit empty parameter (CSI ;5H -> [-1, 5]).
+                if (parameterStarted) pushParameter()
                 val action = if (parameterOverflow) {
                     null
                 } else {
@@ -247,6 +257,7 @@ internal class VtParser {
     private fun clearCsi() {
         parameters.clear()
         currentParameter = null
+        parameterStarted = false
         parameterOverflow = false
         privatePrefix = null
         intermediate = null
