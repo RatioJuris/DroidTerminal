@@ -39,13 +39,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ratiojuris.droidterminal.auth.BiometricAuth
 import com.ratiojuris.droidterminal.auth.VaultAutoLock
+import com.ratiojuris.droidterminal.connections.ConnectionRepository
 import com.ratiojuris.droidterminal.settings.AppSettings
 import com.ratiojuris.droidterminal.settings.SettingsRepository
+import com.ratiojuris.droidterminal.sshengine.SshGateway
 import com.ratiojuris.droidterminal.ui.components.ConfirmDialog
 import com.ratiojuris.droidterminal.ui.components.EmptyState
 import com.ratiojuris.droidterminal.ui.components.ErrorState
 import com.ratiojuris.droidterminal.ui.components.FormTextField
 import com.ratiojuris.droidterminal.ui.components.SectionHeader
+import com.ratiojuris.droidterminal.ui.connections.ConnectionProfilesSection
 import com.ratiojuris.droidterminal.ui.model.UiValidation
 import com.ratiojuris.droidterminal.ui.model.VaultItem
 import com.ratiojuris.droidterminal.ui.model.VaultItemKind
@@ -60,6 +63,8 @@ fun VaultScreen(
     autoLock: VaultAutoLock,
     biometric: BiometricAuth,
     settings: SettingsRepository,
+    connections: ConnectionRepository,
+    gateway: SshGateway,
 ) {
     val unlocked by vault.isUnlocked.collectAsState()
     val storedItems by vault.items.collectAsState()
@@ -173,6 +178,9 @@ fun VaultScreen(
                     )
                 }
             }
+
+            SectionHeader("Connections")
+            ConnectionProfilesSection(repository = connections, gateway = gateway)
 
             SectionHeader("Vault options")
             SettingToggle("Require biometric unlock", requireBiometric) { enabled ->

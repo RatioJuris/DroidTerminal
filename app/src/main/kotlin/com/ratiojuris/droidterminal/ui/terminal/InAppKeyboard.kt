@@ -221,8 +221,8 @@ fun InAppKeyboard(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -283,7 +283,7 @@ private fun SmallButton(label: String, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier
-            .height(40.dp)
+            .height(36.dp)
             .semantics(mergeDescendants = true) { contentDescription = label },
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium)
@@ -404,7 +404,7 @@ private fun RowScope.KeyboardKey(
 
     Box(
         modifier = baseModifier
-            .height(48.dp)
+            .height(42.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(containerColour)
             .pointerInput(def, resolved) {
@@ -446,7 +446,7 @@ private fun RowScope.KeyboardKey(
         if (pressed && def.preview) {
             Popup(
                 alignment = Alignment.BottomCenter,
-                offset = IntOffset(0, -with(density) { 54.dp.roundToPx() }),
+                offset = IntOffset(0, -with(density) { 48.dp.roundToPx() }),
             ) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
@@ -483,11 +483,11 @@ private fun activateKey(
 private fun SelectPad(selectionActive: Boolean, onAction: (SelectionAction) -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             listOf(
                 ArrowDirection.LEFT to SelectionAction.MOVE_LEFT,
@@ -532,7 +532,7 @@ private fun PadRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         labelsAndActions.first.forEachIndexed { index, label ->
             Box(modifier = Modifier.weight(1f)) {
@@ -548,7 +548,7 @@ private fun PadButton(label: String, highlighted: Boolean = false, onClick: () -
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(42.dp)
             .then(if (highlighted) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier)
             .semantics(mergeDescendants = true) { contentDescription = label },
     ) {

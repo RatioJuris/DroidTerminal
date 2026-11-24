@@ -59,6 +59,24 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun ConnectionsScreen(repository: ConnectionRepository, gateway: SshGateway) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ConnectionProfilesSection(repository = repository, gateway = gateway)
+    }
+}
+
+/** Connection profile management embedded in the vault screen. */
+@Composable
+fun ConnectionProfilesSection(
+    repository: ConnectionRepository,
+    gateway: SshGateway,
+    modifier: Modifier = Modifier,
+) {
     var profiles by remember { mutableStateOf(emptyList<ConnectionProfile>()) }
     var query by rememberSaveable { mutableStateOf("") }
     var sort by rememberSaveable { mutableStateOf(ConnectionSort.NAME) }
@@ -114,10 +132,7 @@ fun ConnectionsScreen(repository: ConnectionRepository, gateway: SshGateway) {
     val visible = filterAndSortConnections(profiles, query, sort)
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(12.dp),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

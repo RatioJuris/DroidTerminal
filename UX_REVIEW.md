@@ -40,3 +40,21 @@ Scope: walk each implemented flow, record only observed issues, then fix them wi
 5. Re-walk Settings and Connections; update this file with results.
 
 All fix-plan items are complete. Remaining unverified path: connected terminal/SFTP happy path, blocked because `192.168.31.177:22` does not present an SSH host key.
+
+## Phase 3 follow-up — workspace changes
+
+User-requested changes after the first walkthrough: remove the keyboard on/off switch row, make bottom navigation icon-only, use clearer icons, remove the empty-session text, and merge Connections into Vault.
+
+### High
+
+8. **QWERTY keyboard rows were clipped in portrait.** On `1080x2246` at density `480`, the bottom letter row and control row reported `[0,0][0,0]` bounds and were unreachable; hiding the F-row restored the letters but not the control row. Source: `InAppKeyboard.kt` docked a 40dp header plus six 48dp rows with 4dp spacing into about 260dp. Status: fix implemented, pending device verification — removed the keyboard switch row, removed navigation labels and empty-session text, reduced key/button height to 42dp, header buttons to 36dp, and spacing to 3–4dp.
+
+### Medium
+
+9. **Bottom navigation labels consumed vertical space.** The five labelled items made the bar taller without adding information because the selected destination is already shown in the top bar. Status: fix implemented, pending device verification — `NavigationBarItem` now renders icon-only; `contentDescription = destination.label` keeps screen-reader access. Terminal uses the terminal icon, Vault uses a key icon, SFTP uses the network icon, and Settings keeps the gear. No `Vault` vector exists in `material-icons-extended` 1.7.8, verified from the cached AAR, so the key icon is the closest available vault affordance.
+
+10. **Connections and Vault were separate destinations even though the vault is the credential store.** Status: fix implemented, pending device verification — Connections is removed from bottom navigation; `ConnectionProfilesSection` is embedded in the unlocked Vault screen with the credential and key items. Connection profiles remain in the existing `ConnectionRepository`/DataStore; no encrypted-storage migration was attempted in Phase 3.
+
+11. **Empty terminal showed redundant status text.** `No terminal sessions` occupied space above the connect banner. Status: fixed in code, pending device verification — `SessionTabs` returns immediately when there are no tabs; the actionable `No session selected` banner remains.
+
+Keyboard visibility after removing the switch row remains governed by the saved "Show keyboard by default" setting when Terminal is entered; the keyboard's `Hide` button and Back still hide it for the current visit.

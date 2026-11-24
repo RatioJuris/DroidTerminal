@@ -30,7 +30,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -351,18 +350,6 @@ fun TerminalScreen(
             Spacer(Modifier.height(4.dp))
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (showKeypad) "Keyboard" else "Keyboard hidden",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(Modifier.weight(1f))
-            Switch(checked = showKeypad, onCheckedChange = { showKeypad = it })
-        }
-
         if (showKeypad && !appSettings.useSystemKeyboard) {
             InAppKeyboard(
                 modifiers = modifiers,
@@ -480,14 +467,7 @@ fun TerminalScreen(
 
 @Composable
 private fun SessionTabs(sessions: List<SessionTab>, selectedId: String?, onSelect: (String) -> Unit) {
-    if (sessions.isEmpty()) {
-        Text(
-            "No terminal sessions",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(12.dp),
-        )
-        return
-    }
+    if (sessions.isEmpty()) return
     val selectedIndex = sessions.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
     TabRow(selectedTabIndex = selectedIndex) {
         sessions.forEach { session ->
