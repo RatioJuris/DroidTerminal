@@ -86,6 +86,7 @@ class UiModelsTest {
             rows = listOf(listOf(TerminalCell.of('A'.code, 1), TerminalCell.BLANK)),
             scrollback = emptyList(),
             cursor = Cursor(0, 1),
+            wrapPending = false,
         )
 
         assertEquals(
